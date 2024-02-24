@@ -1,6 +1,6 @@
 # NeverSQL
 
-A small, simple no-sql database implemented in C++. This is a learning project (and a work in progress), and is not
+A small, simple no-SQL database implemented in C++. This is a learning project (and a work in progress), and is not
 intended for production use.
 
 # Structure
@@ -12,7 +12,8 @@ modified the page data.
 
 # Other tools
 
-The project includes some basic functionality to do a hex dump of a file (really, of a stream). This can be useful for debugging purposes.
+The project includes some basic functionality to do a hex dump of a file or stream. This can be useful for debugging
+purposes. This is implemented in *NeverSQL/utility/hexdump.cpp* and *NeverSQL/utility/hexdump.h*.
 
 ![Alt text](./images/hexdump-example-1.png)
 

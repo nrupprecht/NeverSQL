@@ -35,4 +35,12 @@ void FormatHex(char* begin, const char* end, uint32_t x);
 //! \param options The options for the hex dump.
 void HexDump(std::istream& in, std::ostream& hex_out, const HexDumpOptions& options = {});
 
+//! \brief  Read data as u32 from a file and write it as a hex dump to an output stream.
+//! The hex dump will be formatted in rows of `width` bytes, with an optional color for non-zero values.
+//!
+//! \param filepath The path to the file to read to. If the file does not exist, the function exits.
+//! \param hex_out The output stream to write the hex dump to.
+//! \param options The options for the hex dump.
+void HexDump(const std::filesystem::path& filepath, std::ostream& hex_out, const HexDumpOptions& options = {});
+
 }  // namespace neversql::utility

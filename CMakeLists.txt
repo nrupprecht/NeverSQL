@@ -35,6 +35,7 @@ add_library(
     source/data/DataAccessLayer.cpp
     source/data/FreeList.cpp
     source/data/btree/BTree.cpp
+    source/data/btree/BTreeNodeMap.cpp
     source/utility/HexDump.cpp
 )
 add_library(NeverSQL::NeverSQL ALIAS NeverSQL_NeverSQL)

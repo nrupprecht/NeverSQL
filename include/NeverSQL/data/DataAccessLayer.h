@@ -40,14 +40,16 @@ public:
   void ReleasePage(Page page);
 
   //! \brief Get the number of pages in the DAL.
-  NO_DISCARD std::size_t GetNumPages() const;
+  NO_DISCARD page_number_t GetNumPages() const;
 
   //! \brief Get the size of a page in the DAL.
-  NO_DISCARD std::size_t GetPageSize() const;
+  NO_DISCARD page_size_t GetPageSize() const;
 
   //! \brief Get a page from the DAL, if the page exists and is valid (not freed).
-  NO_DISCARD std::optional<Page> GetPage(PageNumber page_number) const;
+  NO_DISCARD std::optional<Page> GetPage(page_number_t page_number) const;
 
+  //! \brief Get the meta data.
+  const Meta& GetMeta() const { return meta_; }
 private:
   //! \brief Get the number of allocated pages.
   NO_DISCARD uint64_t getNumAllocatedPages() const;
@@ -60,15 +62,15 @@ private:
   //! \param page_number
   //! \param safe_mode
   //! \return
-  NO_DISCARD std::optional<Page> getPage(PageNumber page_number, bool safe_mode = true) const;
+  NO_DISCARD std::optional<Page> getPage(page_number_t page_number, bool safe_mode = true) const;
 
   //! \brief Get a new page. This uses the free-list. First, it will try to find an available freed page. If
   //! there are none, it will assign a new page number. In this case, we will need to allocate actual file
   //! space for the new page.
-  NO_DISCARD PageNumber getNewPage();
+  NO_DISCARD page_number_t getNewPage();
 
   //! \brief Release a page back to the free list.
-  void releasePage(PageNumber page_number);
+  void releasePage(page_number_t page_number);
 
   //! \brief Write a page back to the file. The page must have come from the database file to begin with.
   void writePage(const Page& page) const;
@@ -121,7 +123,8 @@ private:
   FreeList free_list_;
 
   //! \brief Set of pages that are reserved for the DAL. Other applications cannot access these pages.
-  std::set<PageNumber> reserved_pages_;
+  //  TODO(Nate): This needs to be stored somewhere in persistent memory too.
+  std::set<page_number_t> reserved_pages_;
 };
 
 }  // namespace neversql

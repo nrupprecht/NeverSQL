@@ -61,22 +61,22 @@ void DataAccessLayer::WriteBackPage(const Page& page) const {
   // Load the page from the file.
   auto fout = getOutputFileStream(file_path_);
   fout.seekp(static_cast<std::streamoff>(page.GetPageNumber() * GetPageSize()));
-  fout.write(page.GetData(), static_cast<std::streamsize>(page.GetPageSize()));
+  fout.write(page.GetChars(), static_cast<std::streamsize>(page.GetPageSize()));
 }
 
 void DataAccessLayer::ReleasePage(Page page) {
   releasePage(page.GetPageNumber());
 }
 
-std::size_t DataAccessLayer::GetNumPages() const {
+page_number_t DataAccessLayer::GetNumPages() const {
   return getNumAllocatedPages();
 }
 
-std::size_t DataAccessLayer::GetPageSize() const {
+page_size_t DataAccessLayer::GetPageSize() const {
   return meta_.GetPageSize();
 }
 
-std::optional<Page> DataAccessLayer::GetPage(PageNumber page_number) const {
+std::optional<Page> DataAccessLayer::GetPage(page_number_t page_number) const {
   return getPage(page_number, true);
 }
 
@@ -84,13 +84,13 @@ uint64_t DataAccessLayer::getNumAllocatedPages() const {
   return free_list_.GetNumAllocatedPages();
 }
 
-std::optional<Page> DataAccessLayer::getPage(PageNumber page_number, bool safe_mode) const {
+std::optional<Page> DataAccessLayer::getPage(page_number_t page_number, bool safe_mode) const {
   Page page(page_number, GetPageSize());
   readPage(page, safe_mode);
   return page;
 }
 
-PageNumber DataAccessLayer::getNewPage() {
+page_number_t DataAccessLayer::getNewPage() {
   std::unique_lock guard(read_write_lock_);
 
   auto page_number = free_list_.GetNextPage();
@@ -100,7 +100,7 @@ PageNumber DataAccessLayer::getNewPage() {
   return page_number;
 }
 
-void DataAccessLayer::releasePage(PageNumber page_number) {
+void DataAccessLayer::releasePage(page_number_t page_number) {
   std::unique_lock guard(read_write_lock_);
   if (reserved_pages_.contains(page_number)) {
     reserved_pages_.erase(page_number);
@@ -118,7 +118,7 @@ void DataAccessLayer::writePage(const Page& page) const {
 
   auto fout = getOutputFileStream(file_path_);
   fout.seekp(static_cast<std::streamoff>(page.page_number_ * GetPageSize()));
-  fout.write(page.GetData(), static_cast<std::streamsize>(GetPageSize()));
+  fout.write(page.GetChars(), static_cast<std::streamsize>(GetPageSize()));
 }
 
 void DataAccessLayer::readPage(Page& page, bool safe_mode) const {
@@ -133,7 +133,7 @@ void DataAccessLayer::readPage(Page& page, bool safe_mode) const {
   std::ifstream fin(file_path_, std::ios::binary);
   page.resize(GetPageSize());
   fin.seekg(static_cast<std::streamoff>(page.GetPageNumber() * GetPageSize()));
-  fin.read(page.GetData(), static_cast<std::streamsize>(GetPageSize()));
+  fin.read(page.GetChars(), static_cast<std::streamsize>(GetPageSize()));
 }
 
 void DataAccessLayer::createDB() {
@@ -232,7 +232,7 @@ void DataAccessLayer::serialize(Page& page, const FreeList& free_list) {
   // TODO: Check that there is enough space left in the meta page.
   // TODO: Allow the free list to be written to multiple pages?
 
-  auto* buffer = page.GetData();
+  auto* buffer = page.GetChars();
 
   write(buffer, free_list.next_page_number_);
   write(buffer, free_list.freed_pages_.size());
@@ -242,40 +242,40 @@ void DataAccessLayer::serialize(Page& page, const FreeList& free_list) {
 }
 
 void DataAccessLayer::deserialize(const Page& page, FreeList& free_list) {
-  const auto* buffer = page.GetData();
+  const auto* buffer = page.GetChars();
 
   read(buffer, free_list.next_page_number_);
   std::size_t size;
   read(buffer, size);
   for (std::size_t i = 0; i < size; ++i) {
-    PageNumber page_number;
+    page_number_t page_number;
     read(buffer, page_number);
     free_list.freed_pages_.push_back(page_number);
   }
 }
 
 void DataAccessLayer::serialize(Page& page, const Meta& meta) {
-  auto* buffer = page.GetData();
+  auto* buffer = page.GetChars();
 
-  write(buffer, Meta::magic_sequence_);
+  write(buffer, Meta::meta_magic_number_);
   write(buffer, meta.page_size_power_);
   write(buffer, meta.free_list_page_);
   write(buffer, meta.index_page_);
 }
 
 void DataAccessLayer::deserialize(const Page& page, Meta& meta) {
-  const auto* buffer = page.GetData();
+  const auto* buffer = page.GetChars();
 
-  char check_sequence[17];
+  uint64_t check_sequence;
   read(buffer, check_sequence);
   // Make sure the magic sequence matches.
   NOSQL_ASSERT(
-      std::string_view(check_sequence) == Meta::magic_sequence_,
-      "magic sequence mismatch, expected '" << Meta::magic_sequence_ << "', got '" << check_sequence << "'");
+      check_sequence == Meta::meta_magic_number_,
+      "magic number mismatch, expected '" << Meta::meta_magic_number_ << "', got '" << check_sequence << "'");
 
   read(buffer, meta.page_size_power_);
   // Set the page size.
-  meta.page_size_ = 1 << meta.page_size_power_;
+  meta.page_size_ = static_cast<page_size_t>(1 << meta.page_size_power_);
 
   read(buffer, meta.free_list_page_);
   read(buffer, meta.index_page_);

@@ -20,9 +20,9 @@ class Document {
   };
 
  public:
-  explicit Document(PrimaryKey pk) noexcept : primary_key(pk) {}
+  explicit Document(primary_key_t pk) noexcept : primary_key(pk) {}
 
-  PrimaryKey primary_key;
+  primary_key_t primary_key;
   std::vector<Field> fields;
   std::vector<unsigned char> compressed_data;
 
