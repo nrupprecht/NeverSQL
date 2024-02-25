@@ -33,14 +33,14 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         build_type: [Release]
         # TODO: Consider re-adding cl. There was some issue before with the toolchain file.
-        c_compiler: [gcc, clang-latest]
+        c_compiler: [gcc, clang]
         include:
           - os: ubuntu-latest
             c_compiler: gcc
             cpp_compiler: g++
           - os: ubuntu-latest
             c_compiler: clang
-            cpp_compiler: clang++
+            cpp_compiler: clang++-15
         exclude:
           - os: windows-latest
             c_compiler: gcc
