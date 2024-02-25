@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include <Lightning/Lightning.h>
 
 namespace neversql {
