@@ -7,6 +7,7 @@
 #include <set>
 #include <shared_mutex>
 #include <utility>
+#include <filesystem>
 
 #include "NeverSQL/data/FreeList.h"
 #include "NeverSQL/data/Page.h"
