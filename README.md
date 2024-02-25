@@ -1,5 +1,7 @@
 # NeverSQL
 
+[![CMake on multiple platforms](https://github.com/nrupprecht/NeverSQL/actions/workflows/cmake-build-and-test-platform.yml/badge.svg?branch=main)](https://github.com/nrupprecht/NeverSQL/actions/workflows/cmake-build-and-test-platform.yml)
+
 A small, simple no-SQL database implemented in C++. This is a learning project (and a work in progress), and is not
 intended for production use.
 
