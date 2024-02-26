@@ -164,6 +164,9 @@ void DataAccessLayer::createDB() {
     LOG_SEV(Error) << "Could not get free list page.";
     NOSQL_FAIL("could not get free list page");
   }
+
+  // NOTE: Not creating the main index page yet, since the lack of this page indicates to the DataManager that the
+  // database is being set up.
 }
 
 void DataAccessLayer::openDB() {
@@ -208,6 +211,11 @@ void DataAccessLayer::updateMeta() const {
   Page meta_page(0, GetPageSize());
   serialize(meta_page, meta_);
   writePage(meta_page);
+}
+
+void DataAccessLayer::setIndexPage(page_number_t index_page) {
+  meta_.index_page_ = index_page;
+  updateMeta();
 }
 
 void DataAccessLayer::updateFreeList() const {

@@ -5,6 +5,9 @@
     style should go here.
 -->
 
+This is by and large a personal project to help me learn more. 
+That being said, if for some reason, you really want to contribute, get in touch.
+
 ## Code of Conduct
 
 Please see the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) document.

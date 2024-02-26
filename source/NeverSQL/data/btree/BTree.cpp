@@ -3,6 +3,34 @@
 
 namespace neversql {
 
+void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value) {
+  // Search for the leaf node where the key should be inserted.
+  auto result = search(key);
+
+  // Check if we can add the element to the node (without re-balancing).
+  if (result.node) {
+    // For now, don't do anything fancy, just check if there is enough de-fragemented space to add the
+    // element.
+    // TODO: More complex strategies could include vacuuming, looking for fragmented free space, etc.
+    auto space_available = result.node->GetDefragmentedFreeSpace();
+
+    if (space_available >= sizeof(primary_key_t) + sizeof(entry_size_t) + value.size()) {
+      NOSQL_ASSERT(addElementToNode(*result.node, key, value),
+                   "could not add element to the node, but this should be possible");
+    }
+
+    // Else, we have to split the node and re-balance the tree.
+    LOG_SEV(Trace) << "Not enough free space, node must be split.";
+  }
+  else {
+    // There must be only a root node. Try to add an element to the root node.
+    auto root = loadNodePage(index_page_);
+    NOSQL_ASSERT(root, "could not find root node");
+
+    addElementToNode(*root, key, value);
+  }
+}
+
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type) const {
   auto page = data_access_layer_->GetNewPage();
   auto page_size = page.GetPageSize();
@@ -29,7 +57,7 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
     BTreeNodeMap node(std::move(*page));
     // Make sure the magic number is correct. This is an assert, because if it's not correct, something is
     // very wrong with the database itself.
-    NOSQL_ASSERT(node.GetHeader().magic_byte == ToUInt67("NOSQLBTR"), "invalid magic number in page");
+    NOSQL_ASSERT(node.GetHeader().magic_byte == ToUInt67("NOSQLBTR"), "invalid magic number in page " << page_number);
     return node;
   }
   return {};
@@ -37,7 +65,9 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
 
 bool BTreeManager::addElementToNode(BTreeNodeMap& node_map,
                                     primary_key_t key,
-                                    std::span<const std::byte> serialized_value) {
+                                    std::span<const std::byte> serialized_value,
+                                    bool store_size,
+                                    bool unique_keys) {
   BTreePageHeader& header = node_map.GetHeader();
 
   // Check if there is enough free space to add the data.
@@ -46,14 +76,24 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map,
   // Offset to value: sizeof(page_size_t)
   // ============   Cell space  ============
   // Primary key: sizeof(primary_key_t)
-  // Size of value: sizeof(entry_size_t)
+  // Size of value: sizeof(entry_size_t) [if store_size is true]
   // Value: serialized_value.size()
   // =======================================
+
+  if (unique_keys) {
+    if (auto offset = node_map.getCellLowerBoundByPK(key)) {
+      // If the key is already in the node, we cannot add it again.
+      if (auto cell = node_map.getCell(*offset); std::get<LeafNodeCell>(cell).key == key) {
+        LOG_SEV(Trace) << "Key " << key << " already in node on page " << header.page_number << ".";
+        return false;
+      }
+    }
+  }
 
   // TODO: If the keys have variable sizes, this needs to change.
   // TODO: If we allow for overflow pages, this needs to change.
   auto pointer_space = sizeof(page_size_t);
-  auto cell_space = sizeof(primary_key_t) + sizeof(entry_size_t) + serialized_value.size();
+  auto cell_space = sizeof(primary_key_t) + (store_size ? sizeof(entry_size_t) : 0) + serialized_value.size();
   auto required_space = pointer_space + cell_space;
 
   // Check whether we would need an overflow page.
@@ -90,12 +130,14 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map,
     NOSQL_FAIL("unhandled case, keys must be of type primary_key_t, and pages must use fixed size keys");
   }
 
-  // Write the size of the value.
-  // TODO: What to do if we need an overflow page. This obviously only works as is if we are storing the whole
-  //  entry here.
-  auto data_size = static_cast<entry_size_t>(serialized_value.size());
-  std::memcpy(ptr, reinterpret_cast<const std::byte*>(&data_size), sizeof(entry_size_t));
-  ptr += sizeof(entry_size_t);
+  if (store_size) {
+    // Write the size of the value.
+    // TODO: What to do if we need an overflow page. This obviously only works as is if we are storing the whole
+    //  entry here.
+    auto data_size = static_cast<entry_size_t>(serialized_value.size());
+    std::memcpy(ptr, reinterpret_cast<const std::byte*>(&data_size), sizeof(entry_size_t));
+    ptr += sizeof(entry_size_t);
+  }
 
   // Write the value.
   std::ranges::copy(serialized_value, ptr);
@@ -130,6 +172,19 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map,
   return true;
 }
 
+void BTreeManager::linkChild(BTreeNodeMap& parent, page_number_t child_page_number, SearchResult& result) {
+  std::span<const std::byte> view_page_number(reinterpret_cast<const std::byte*>(&child_page_number),
+                                              sizeof(page_number_t));
+  NOSQL_REQUIRE(!parent.IsPointersPage(), "pointers nodes cannot have children");
+  if (addElementToNode(parent, child_page_number, view_page_number, false)) {
+    return;
+  }
+  // Otherwise, there is not enough space to add the child to the parent node.
+
+  // TODO: Splitting.
+  // split(parent);
+}
+
 void BTreeManager::writeBack(const BTreeNodeMap& node_map) const {
   data_access_layer_->WriteBackPage(node_map.page_);
 }
@@ -149,7 +204,8 @@ SearchResult BTreeManager::search(primary_key_t key) const {
   result.path.Push(node.GetPageNumber());
   // Loop until found. Since this is a (presumably well-formed) B-tree, this should always terminate.
   for (;;) {
-    if (node.IsLeaf()) {
+    if (node.IsPointersPage()) {
+      // Elements are allocated directly in this page.
       result.node = std::move(node);
       break;
     }
@@ -165,6 +221,7 @@ SearchResult BTreeManager::search(primary_key_t key) const {
       node = std::move(*child);
     }
     // Could not find a child.
+    LOG_SEV(Trace) << "Could not find a child of non-leaf node on page " << node.GetPageNumber() << ".";
     break;
   }
 

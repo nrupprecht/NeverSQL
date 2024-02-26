@@ -56,13 +56,22 @@ public:
   //! \brief Get the number of pointers (and therefore cells) in the node.
   NO_DISCARD page_size_t GetNumPointers() const;
 
+  //! \brief Get the amount of "de-fragmented" free space, that is, the amount of free space in between free space start
+  //! and free space end.
+  //!
+  //! There may be more "fragmented" free space due to cells being erased, this is not counted here.
+  //! \return The amount of free space in the node, in the free space section.
   NO_DISCARD page_size_t GetDefragmentedFreeSpace() const;
 
   //! \brief Get the largest key of any element in the node. If there are no keys, returns nullopt.
   NO_DISCARD std::optional<primary_key_t> GetLargestKey() const;
 
-  //! \brief Returns whether this is a leaf node.
-  NO_DISCARD bool IsLeaf() const;
+  //! \brief Check whether this page is a pointers page, that is, whether it only stores pointers to other
+  //! pages instead of storing data.
+  NO_DISCARD bool IsPointersPage() const noexcept;
+
+  //! \brief Check whether this page is the root page.
+  NO_DISCARD bool IsRootPage() const noexcept;
 
 private:
   //! \brief Create a new BTreeNodeMap wrapping a page. No checks are done to see if the page is a valid B-tree node.

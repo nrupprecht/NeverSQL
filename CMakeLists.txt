@@ -43,11 +43,12 @@ include_directories(${Lightning_SOURCE_DIR}/include)
 add_library(
     NeverSQL_NeverSQL
     # Source files.
-    source/data/DataAccessLayer.cpp
-    source/data/FreeList.cpp
-    source/data/btree/BTree.cpp
-    source/data/btree/BTreeNodeMap.cpp
-    source/utility/HexDump.cpp
+    source/NeverSQL/data/DataAccessLayer.cpp
+    source/NeverSQL/data/FreeList.cpp
+    source/NeverSQL/data/btree/BTree.cpp
+    source/NeverSQL/data/btree/BTreeNodeMap.cpp
+    source/NeverSQL/database/DataManager.cpp
+    source/NeverSQL/utility/HexDump.cpp
 )
 add_library(NeverSQL::NeverSQL ALIAS NeverSQL_NeverSQL)
 

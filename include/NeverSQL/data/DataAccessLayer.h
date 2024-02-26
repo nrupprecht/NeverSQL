@@ -21,6 +21,8 @@ namespace neversql {
 //! pages are free, database information, etc.), and provides an interface to read and write pages. Actual applications are
 //! responsible for interpreting the data in the pages, and serializing/deserializing data to and from the pages.
 class DataAccessLayer {
+  friend class DataManager;
+
 public:
   //! \brief Create or open a database file located at the given path.
   explicit DataAccessLayer(std::filesystem::path file_path);
@@ -51,6 +53,7 @@ public:
 
   //! \brief Get the meta data.
   const Meta& GetMeta() const { return meta_; }
+
 private:
   //! \brief Get the number of allocated pages.
   NO_DISCARD uint64_t getNumAllocatedPages() const;
@@ -90,6 +93,9 @@ private:
 
   //! \brief Update the meta page.
   void updateMeta() const;
+
+  //! \brief Set the index page in the meta.
+  void setIndexPage(page_number_t index_page);
 
   //! \brief Update the free list page.
   void updateFreeList() const;

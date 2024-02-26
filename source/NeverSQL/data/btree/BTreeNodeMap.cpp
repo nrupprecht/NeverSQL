@@ -42,8 +42,12 @@ std::optional<primary_key_t> BTreeNodeMap::GetLargestKey() const {
   return {};
 }
 
-bool BTreeNodeMap::IsLeaf() const {
-  return GetType() == BTreePageType::Leaf;
+bool BTreeNodeMap::IsPointersPage() const noexcept {
+  return GetHeader().IsPointersPage();
+}
+
+bool BTreeNodeMap::IsRootPage() const noexcept {
+  return GetHeader().IsRootPage();
 }
 
 BTreeNodeMap::BTreeNodeMap(Page&& page) noexcept
@@ -66,9 +70,11 @@ std::optional<page_size_t> BTreeNodeMap::getCellByPK(primary_key_t key) const {
 
 std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(primary_key_t key) const {
   std::span<const page_size_t> pointers = getPointers();
-  auto it = std::ranges::lower_bound(pointers, key, [this](decltype(key) k, auto&& ptr) {
-    return k < getKeyForCell(static_cast<page_size_t>(ptr));
-  });
+  auto it = std::ranges::lower_bound(
+      pointers,
+      key,
+      std::ranges::less{},
+      [this](auto&& ptr) { return getKeyForCell(ptr); });
   if (it == pointers.end()) {
     return {};
   }
@@ -98,7 +104,7 @@ primary_key_t BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
 
 std::variant<LeafNodeCell, InteriorNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
   auto&& header = GetHeader();
-  if (header.GetPageType() == BTreePageType::Leaf) {
+  if (header.IsPointersPage()) {
     return LeafNodeCell {
         getKeyForCell(cell_offset),
         page_.CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),

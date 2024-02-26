@@ -8,9 +8,8 @@
 #include <iostream>
 #include <string>
 
-#include "NeverSQL/data/DataAccessLayer.h"
-#include "NeverSQL/data/Document.h"
 #include "NeverSQL/data/btree/BTree.h"
+#include "NeverSQL/database/DataManager.h"
 #include "NeverSQL/utility/HexDump.h"
 
 using lightning::AnsiColor8Bit;
@@ -20,7 +19,8 @@ int main() {
   lightning::Global::GetCore()->AddSink(lightning::NewSink<lightning::StdoutSink>());
 
   // ---> Your database path here.
-  std::filesystem::path database_path = "";
+  std::filesystem::path database_path = "test.db";
+
   neversql::DataAccessLayer layer(database_path);
 
   LOG_SEV(Info) << "Number of pages in the database is " << layer.GetNumPages() << ".";

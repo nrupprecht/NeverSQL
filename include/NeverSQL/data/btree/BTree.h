@@ -28,9 +28,12 @@ struct SearchResult {
 //!
 //! Technically, a B+ tree, since all data is stored in leaf nodes.
 class BTreeManager {
+  friend class DataManager;
 public:
   explicit BTreeManager(DataAccessLayer* data_access_layer) noexcept
       : data_access_layer_(data_access_layer) {}
+
+  void AddValue(primary_key_t key, std::span<const std::byte> value);
 
   // private:
   BTreeNodeMap newNodePage(BTreePageType type) const;
@@ -44,14 +47,22 @@ public:
   //! \param node_map
   //! \param key
   //! \param serialized_value
+  //! \param store_size Whether the size of the serialized value needs to be stored in the node. This will be
+  //!     true for leaf nodes, but false for internal nodes.
+  //! \param unique_keys Whether the keys in the node must be unique. This will generally be true.
   bool addElementToNode(BTreeNodeMap& node_map,
                         primary_key_t key,
-                        std::span<const std::byte> serialized_value);
+                        std::span<const std::byte> serialized_value,
+                        bool store_size = true,
+                        bool unique_keys = true);
+
+  //! \brief Link a child to the parent node.
+  void linkChild(BTreeNodeMap& parent, page_number_t child_page_number, SearchResult& result);
 
   //! \brief Write the node back to the file.
   void writeBack(const BTreeNodeMap& node_map) const;
 
-  //! \brief Look for a place where a key should be inserted or can be found.
+  //! \brief Look for the leaf node where a key should be inserted or can be found.
   SearchResult search(primary_key_t key) const;
 
   // =================================================================================================
@@ -65,6 +76,9 @@ public:
   //!
   //! This information comes from the DAL.
   page_number_t index_page_ {};
+
+  //! \brief The maximum entry size, in bytes, before an overflow page is needed
+  page_size_t max_entry_size_ = 256;
 };
 
 }  // namespace neversql

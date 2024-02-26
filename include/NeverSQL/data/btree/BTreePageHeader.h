@@ -23,13 +23,19 @@ enum class BTreePageType : uint8_t {
 struct BTreePageHeader {
   //! \brief A magic byte to identify the page as a B-tree page.
   //!
-  //! This should be 0x42.
+  //! This should be "NOSQLBTR" in ASCII.
   uint64_t magic_byte = ToUInt67("NOSQLBTR");
 
   //! \brief Flags that give information about the page.
-  //! 0000 0 K TT
-  //! TT => Leaf node (01), Internal node (10), Root node (11)
-  //! K  => Key type (0 = uint64_t, 1 = variable length)
+  //! Flags bit layout:
+  //!     0000 0K RP
+  //!
+  //! P => Pointers page (0 = no, 1 = yes). Leaf nodes and the root node in pointer-mode (when the root has
+  //!     children) have this flag set to true.
+  //! R => Root node (0 = no, 1 = yes). The root node has this flag set to true.
+  //! K => Key type (0 = uint64_t, 1 = variable length)
+  //!
+  //! The rest of the bits are reserved for future use and denoted by '0's.
   uint8_t flags {};
 
   //! \brief The start of free space on the page.
@@ -50,30 +56,49 @@ struct BTreePageHeader {
   // =================================================================================================
 
   //! \brief Helper function to find the start of the pointers space.
-  NO_DISCARD static page_size_t GetPointersStart() { return sizeof(BTreePageHeader); }
+  NO_DISCARD static page_size_t GetPointersStart() noexcept { return sizeof(BTreePageHeader); }
 
   //! \brief Get a pointer to the first place where a pointer can be allocated.
-  NO_DISCARD page_size_t* GetFirstPointer() {
+  NO_DISCARD page_size_t* GetFirstPointer() noexcept {
     return reinterpret_cast<page_size_t*>(Data() + GetPointersStart());
   }
 
   //! \brief Get a pointer to the next place where a pointer can be allocated.
-  NO_DISCARD page_size_t* GetNextPointer() { return reinterpret_cast<page_size_t*>(Data() + free_start); }
+  NO_DISCARD page_size_t* GetNextPointer() noexcept {
+    return reinterpret_cast<page_size_t*>(Data() + free_start);
+  }
 
   //! \brief Get the number of pointers on the page.
-  NO_DISCARD page_size_t GetNumPointers() const {
+  NO_DISCARD page_size_t GetNumPointers() const noexcept {
     return (free_start - GetPointersStart()) / sizeof(page_size_t);
   }
 
   //! \brief Get the amount of de-fragmented free space on the page.
   NO_DISCARD page_size_t GetDefragmentedFreeSpace() const { return free_end - free_start; }
 
+  //! \brief Check whether this page is a pointers page, that is, whether it only stores pointers to other
+  //! pages instead of storing data.
+  NO_DISCARD bool IsPointersPage() const noexcept { return (flags & 0b1) != 0; }
+
+  //! \brief Check whether this page is the root page.
+  NO_DISCARD bool IsRootPage() const noexcept { return (flags & 0b10) != 0; }
+
   //! \brief Get the type of this page.
-  NO_DISCARD BTreePageType GetPageType() const { return static_cast<BTreePageType>(flags & 0b11); }
+  NO_DISCARD BTreePageType GetPageType() const noexcept {
+    if (IsRootPage()) {
+      return BTreePageType::Root;
+    }
+    if (IsPointersPage()) {
+      return BTreePageType::Internal;
+    }
+    return BTreePageType::Leaf;
+  }
 
-  NO_DISCARD bool IsUInt64Key() const { return (flags & 0b100) == 0; }
+  //! \brief Check whether the key type for this BTree is a primary_key_t.
+  NO_DISCARD bool IsUInt64Key() const noexcept { return (flags & 0b100) == 0; }
 
-  NO_DISCARD std::byte* Data() { return reinterpret_cast<std::byte*>(this); }
+  //! \brief Get a std::byte pointer to the start of the page.
+  NO_DISCARD std::byte* Data() noexcept { return reinterpret_cast<std::byte*>(this); }
 };
 
 }  // namespace neversql
