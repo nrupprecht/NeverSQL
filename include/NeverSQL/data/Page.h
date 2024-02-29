@@ -5,7 +5,9 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string_view>
+
 #include "NeverSQL/utility/Defines.h"
 
 namespace neversql {
@@ -48,6 +50,15 @@ public:
 
   //! \brief Get a string view into the page's data.
   NO_DISCARD std::string_view GetView() const { return std::string_view(data_.get(), page_size_); }
+
+  //! \brief Get a span of the page's data.
+  NO_DISCARD std::span<const std::byte> GetSpan(page_size_t offset, page_size_t span_size) const {
+    return {GetPtr<const std::byte>(offset), span_size};
+  }
+
+  NO_DISCARD std::span<std::byte> GetSpan(page_size_t offset, page_size_t span_size) {
+    return {GetPtr<std::byte>(offset), span_size};
+  }
 
 private:
   //! \brief Private constructor, only the DataAccessLayer can create pages.

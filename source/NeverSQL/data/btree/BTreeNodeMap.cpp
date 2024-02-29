@@ -81,6 +81,31 @@ std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(primary_key_t key
   return *it;
 }
 
+page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) const {
+  NOSQL_REQUIRE(GetHeader().IsPointersPage(), "cannot get next page from a page that is not a pointers page");
+
+  if (GetNumPointers() == 0) {
+    auto next_page = GetHeader().additional_data;
+    NOSQL_ASSERT(next_page != 0, "next page cannot be the 0 page");
+    return next_page;
+  }
+
+  auto num_pointers = GetNumPointers();
+  auto last_cell = std::get<PointersNodeCell>(getNthCell(num_pointers - 1));
+  if (last_cell.key < key) {
+    auto&& header = GetHeader();
+    auto next_page = header.additional_data;
+    NOSQL_ASSERT(next_page != 0, "next page cannot be the 0 page");
+    return next_page;
+  }
+  // Get the offset to the first key that is greater
+  auto offset = getCellLowerBoundByPK(key);
+  NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << key);
+  // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
+  // number.
+  return *reinterpret_cast<const page_number_t*>(page_.GetPtr(*offset + sizeof(primary_key_t)));
+}
+
 std::span<page_size_t> BTreeNodeMap::getPointers() {
   auto&& header = GetHeader();
   auto start_ptrs = header.GetPointersStart();
@@ -102,18 +127,29 @@ primary_key_t BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
   return pk;
 }
 
-std::variant<LeafNodeCell, InteriorNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
+primary_key_t BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
+  auto&& pointers = getPointers();
+  NOSQL_ASSERT(cell_index < pointers.size(), "cell number " << cell_index << " is out of range");
+  return getKeyForCell(pointers[cell_index]);
+}
+
+std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
   auto&& header = GetHeader();
   if (header.IsPointersPage()) {
-    return LeafNodeCell {
+    return PointersNodeCell {
         getKeyForCell(cell_offset),
-        page_.CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),
-        //*reinterpret_cast<const entry_size_t*>(page_.GetPtr(cell_offset + sizeof(primary_key_t))),
-        page_.GetPtr(cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t))};
+        *reinterpret_cast<const page_number_t*>(page_.GetPtr(cell_offset + sizeof(primary_key_t)))};
   }
-  return InteriorNodeCell {
+  return DataNodeCell {
       getKeyForCell(cell_offset),
-      *reinterpret_cast<const page_number_t*>(page_.GetPtr(cell_offset + sizeof(primary_key_t)))};
+      page_.CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),
+      page_.GetPtr(cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t))};
+}
+
+std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {
+  auto&& pointers = getPointers();
+  NOSQL_ASSERT(cell_number < pointers.size(), "cell number " << cell_number << " is out of range");
+  return getCell(pointers[cell_number]);
 }
 
 void BTreeNodeMap::sortKeys() {

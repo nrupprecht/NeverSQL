@@ -20,6 +20,13 @@ public:
   NO_DISCARD constexpr bool Full() const noexcept { return size_ == StackSize_v; }
   NO_DISCARD constexpr std::size_t GetRemainingSize() const noexcept { return StackSize_v - size_; }
 
+  NO_DISCARD constexpr std::optional<T> operator[](std::size_t index) noexcept {
+    if (StackSize_v <= index) {
+      return {};
+    }
+    return buffer_[index];
+  }
+
   constexpr void Push(const T& value) noexcept {
     if (!Full()) {
       buffer_[size_++] = value;

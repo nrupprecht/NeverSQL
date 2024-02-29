@@ -49,6 +49,7 @@ add_library(
     source/NeverSQL/data/btree/BTreeNodeMap.cpp
     source/NeverSQL/database/DataManager.cpp
     source/NeverSQL/utility/HexDump.cpp
+    source/NeverSQL/utility/PageDump.cpp
 )
 add_library(NeverSQL::NeverSQL ALIAS NeverSQL_NeverSQL)
 

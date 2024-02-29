@@ -12,7 +12,7 @@
 namespace neversql {
 
 //! \brief Helper structure that represents a cell in a leaf node.
-struct LeafNodeCell {
+struct DataNodeCell {
   const primary_key_t key;
   const entry_size_t size_of_entry;
   const std::byte* start_of_value;
@@ -22,20 +22,32 @@ struct LeafNodeCell {
   // =================================================================================================
 
   //! \brief Get a span of the value in the cell.
-  std::span<const std::byte> SpanValue() const {
+  NO_DISCARD std::span<const std::byte> SpanValue() const noexcept {
     return std::span<const std::byte>(start_of_value, size_of_entry);
+  }
+
+  NO_DISCARD page_size_t GetSize() const noexcept {
+    return static_cast<page_size_t>(sizeof(primary_key_t) + sizeof(entry_size_t) + size_of_entry);
   }
 };
 
 //! \brief Helper structure that represents a cell in an internal node.
-struct InteriorNodeCell {
+struct PointersNodeCell {
   const primary_key_t key;
   const page_number_t page_number;
+
+  NO_DISCARD page_size_t GetSize() const noexcept { return sizeof(primary_key_t) + sizeof(page_number_t); }
 };
+
+namespace utility {
+class PageInspector;
+}  // namespace utility
 
 //! \brief Node object that can "memory map" a B-tree node onto a page.
 class BTreeNodeMap {
   friend class BTreeManager;
+
+  friend class utility::PageInspector;
 
 public:
   //! \brief Get the header of the page.
@@ -95,6 +107,10 @@ private:
   //! \return The offset to the start of the cell, or std::nullopt if there are no keys greater than or equal to the given key.
   std::optional<page_size_t> getCellLowerBoundByPK(primary_key_t) const;
 
+  //! \brief If this is a pointers page, get the next page to search on. If this is not a pointers page,
+  //! raises and error.
+  page_number_t searchForNextPageInPointersPage(primary_key_t key) const;
+
   //! \brief Get a span of the offsets in the node.
   std::span<page_size_t> getPointers();
 
@@ -104,9 +120,16 @@ private:
   //! \brief Get the primary key from a cell, given the cell offset.
   primary_key_t getKeyForCell(page_size_t cell_offset) const;
 
+  //! \brief Get the primary key from a cell, given the cell's index.
+  primary_key_t getKeyForNthCell(page_size_t cell_index) const;
+
   //! \brief Get the cell at the given offset, as a structure. If the node is a leaf node, LeafNodeCell is
   //! returned. If the node is an interior node, InteriorNodeCell is returned.
-  std::variant<LeafNodeCell, InteriorNodeCell> getCell(page_size_t cell_offset) const;
+  std::variant<DataNodeCell, PointersNodeCell> getCell(page_size_t cell_offset) const;
+
+  //! \brief Get the N-th cell in the node, as a structure. If the node is a leaf node, LeafNodeCell is
+  //! returned. If the node is an interior node, InteriorNodeCell is returned.
+  std::variant<DataNodeCell, PointersNodeCell> getNthCell(page_size_t cell_number) const;
 
   //! \brief Sort the keys in the node by the primary key they refer to.
   void sortKeys();

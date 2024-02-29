@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <filesystem>
+#include <span>
 
 #include <Lightning/Lightning.h>
 
@@ -27,6 +28,15 @@ struct HexDumpOptions {
 //! \param end The end of the buffer to write to.
 //! \param x The value to format.
 void FormatHex(char* begin, const char* end, uint32_t x);
+
+//! \brief Format a span of bytes as a binary string.
+void FormatBinary(lightning::memory::BasicMemoryBuffer<char>& buffer, std::span<std::byte> data);
+
+//! \brief Format a integral type as a binary string, writing to a provided buffer.
+template<typename Integer_t> requires std::is_integral_v<Integer_t>
+void FormatBinary(lightning::memory::BasicMemoryBuffer<char>& buffer, Integer_t x) {
+  return FormatBinary(buffer, std::span(reinterpret_cast<std::byte*>(&x), sizeof(x)));
+}
 
 //! \brief Read data as u32 from an input stream and write it as a hex dump to an output stream.
 //! The hex dump will be formatted in rows of `width` bytes, with an optional color for non-zero values.

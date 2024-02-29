@@ -31,7 +31,7 @@ public:
 
 private:
   //! \brief The magic sequence for the database.
-  static inline uint64_t meta_magic_number_ = ToUInt67("NeverSQL");  // Null terminated.
+  static inline uint64_t meta_magic_number_ = ToUInt64("NeverSQL");  // Null terminated.
 
   //! \brief The power of 2 used for the page size, alternatively, lg(page_size_).
   uint8_t page_size_power_ = 12;

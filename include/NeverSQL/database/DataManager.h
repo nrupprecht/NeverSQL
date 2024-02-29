@@ -19,12 +19,16 @@ public:
   //! \brief Add a value to the database.
   void AddValue(primary_key_t key, std::span<const std::byte> value);
 
+  //! \brief Get a search result for a given key.
+  SearchResult Search(primary_key_t key) const;
+
   // ========================================
   // Debugging and Diagnostic Functions
   // ========================================
 
   bool HexDumpPage(page_number_t page_number, std::ostream& out, utility::HexDumpOptions options = {}) const;
 
+  bool NodeDumpPage(page_number_t page_number, std::ostream& out) const;
 private:
   //! \brief The data access layer for the database.
   DataAccessLayer data_access_layer_;

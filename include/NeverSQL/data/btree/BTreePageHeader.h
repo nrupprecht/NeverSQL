@@ -9,9 +9,10 @@
 namespace neversql {
 
 enum class BTreePageType : uint8_t {
-  Leaf = 0b01,
-  Internal = 0b10,
-  Root = 0b11,
+  Leaf = 0b00,
+  Internal = 0b01,
+  RootLeaf = 0b10,
+  RootInternal = 0b11,
 };
 
 //! \brief The header for a B-tree page.
@@ -21,10 +22,10 @@ enum class BTreePageType : uint8_t {
 //! 0      sizeof(Header)   free_start               free_end       reserved_start       page_size
 //!
 struct BTreePageHeader {
-  //! \brief A magic byte to identify the page as a B-tree page.
+  //! \brief A magic number to identify the page as a B-tree page.
   //!
   //! This should be "NOSQLBTR" in ASCII.
-  uint64_t magic_byte = ToUInt67("NOSQLBTR");
+  uint64_t magic_number = ToUInt64("NOSQLBTR");
 
   //! \brief Flags that give information about the page.
   //! Flags bit layout:
@@ -51,12 +52,18 @@ struct BTreePageHeader {
   //! \brief The page's number.
   page_number_t page_number {};
 
+  //! \brief Additional data.
+  //! If this is a pointers page, this is the "rightmost" pointer, i.e. the pointer to the page containing all data
+  //! greater than the greatest key in this page.
+  //! If this is a leaf page, I am leaving it empty for now.
+  page_number_t additional_data{};
+
   // =================================================================================================
   // Helper functions.
   // =================================================================================================
 
   //! \brief Helper function to find the start of the pointers space.
-  NO_DISCARD static page_size_t GetPointersStart() noexcept { return sizeof(BTreePageHeader); }
+  NO_DISCARD page_size_t GetPointersStart() const noexcept { return sizeof(BTreePageHeader); }
 
   //! \brief Get a pointer to the first place where a pointer can be allocated.
   NO_DISCARD page_size_t* GetFirstPointer() noexcept {
@@ -85,13 +92,7 @@ struct BTreePageHeader {
 
   //! \brief Get the type of this page.
   NO_DISCARD BTreePageType GetPageType() const noexcept {
-    if (IsRootPage()) {
-      return BTreePageType::Root;
-    }
-    if (IsPointersPage()) {
-      return BTreePageType::Internal;
-    }
-    return BTreePageType::Leaf;
+    return static_cast<BTreePageType>(flags & 0b11);
   }
 
   //! \brief Check whether the key type for this BTree is a primary_key_t.

@@ -4,6 +4,7 @@
 
 #include "NeverSQL/database/DataManager.h"
 // Other files.
+#include "NeverSQL/utility/PageDump.h"
 
 namespace neversql {
 
@@ -17,7 +18,7 @@ DataManager::DataManager(const std::filesystem::path& database_path)
   if (meta.GetIndexPage() == 0) {
     // For now, we only support one index, a primary key index. So just set up this page as the root page for
     // the index B-tree.
-    auto root_page = primary_index_.newNodePage(BTreePageType::Root);
+    auto root_page = primary_index_.newNodePage(BTreePageType::RootLeaf);
     LOG_SEV(Trace) << "Root page allocated to be page " << root_page.GetPageNumber() << ".";
 
     data_access_layer_.setIndexPage(root_page.GetPageNumber());
@@ -33,6 +34,10 @@ void DataManager::AddValue(primary_key_t key, std::span<const std::byte> value) 
   primary_index_.AddValue(key, value);
 }
 
+SearchResult DataManager::Search(primary_key_t key) const {
+  return primary_index_.search(key);
+}
+
 bool DataManager::HexDumpPage(page_number_t page_number,
                               std::ostream& out,
                               utility::HexDumpOptions options) const {
@@ -42,9 +47,15 @@ bool DataManager::HexDumpPage(page_number_t page_number,
     neversql::utility::HexDump(stream, out, options);
     return true;
   }
-  else {
-    return false;
+  return false;
+}
+
+bool DataManager::NodeDumpPage(page_number_t page_number, std::ostream& out) const {
+  if (auto page = primary_index_.loadNodePage(page_number)) {
+    neversql::utility::PageInspector::NodePageDump(*page, out);
+    return true;
   }
+  return false;
 }
 
 }  // namespace neversql

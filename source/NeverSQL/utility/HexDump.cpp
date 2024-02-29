@@ -61,6 +61,23 @@ void FormatHex(char* begin, const char* end, uint32_t x) {
   }
 }
 
+void FormatBinary(lightning::memory::BasicMemoryBuffer<char>& buffer, std::span<std::byte> data) {
+  static const char* binary_digits = "01";
+  buffer.PushBack('0');
+  buffer.PushBack('b');
+  for (auto byte : data) {
+    auto x = static_cast<uint8_t>(byte);
+    buffer.PushBack(binary_digits[x >> 0 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 1 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 2 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 3 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 4 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 5 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 6 & 0b1]);
+    buffer.PushBack(binary_digits[x >> 7 & 0b1]);
+  }
+}
+
 void FancyFormatHex(lightning::memory::BasicMemoryBuffer<char>& buffer, uint32_t x) {
   using namespace lightning::memory;
   using namespace lightning::formatting;
