@@ -10,6 +10,15 @@
 
 namespace neversql {
 
+//! \brief Structure that represents data on retrieving data from the data manager.
+struct RetrievalResult {
+  SearchResult search_result;
+  page_size_t cell_offset {};
+  std::span<const std::byte> value_view;
+
+  bool IsFound() const noexcept { return search_result.node.has_value(); }
+};
+
 //! \brief Object that manages the data in the database, e.g. setting up B-trees and indices within the
 //! database.
 class DataManager {
@@ -21,6 +30,8 @@ public:
 
   //! \brief Get a search result for a given key.
   SearchResult Search(primary_key_t key) const;
+
+  RetrievalResult Retrieve(primary_key_t key) const;
 
   // ========================================
   // Debugging and Diagnostic Functions

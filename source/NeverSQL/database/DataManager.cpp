@@ -38,6 +38,17 @@ SearchResult DataManager::Search(primary_key_t key) const {
   return primary_index_.search(key);
 }
 
+RetrievalResult DataManager::Retrieve(primary_key_t key) const {
+  RetrievalResult result {.search_result = Search(key)};
+  if (result.search_result.node) {
+    if (auto offset = *result.search_result.node->getCellByPK(key)) {
+      result.cell_offset = offset;
+      result.value_view = std::get<DataNodeCell>(result.search_result.node->getCell(offset)).SpanValue();
+    }
+  }
+  return result;
+}
+
 bool DataManager::HexDumpPage(page_number_t page_number,
                               std::ostream& out,
                               utility::HexDumpOptions options) const {

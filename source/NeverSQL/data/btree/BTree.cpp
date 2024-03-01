@@ -41,7 +41,7 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
   }
 }
 
-BTreeNodeMap BTreeManager::newNodePage(BTreePageType type) const {
+BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, bool write_back) const {
   auto page = data_access_layer_->GetNewPage();
   auto page_size = page.GetPageSize();
   BTreeNodeMap node_map(std::move(page));
@@ -57,8 +57,9 @@ BTreeNodeMap BTreeManager::newNodePage(BTreePageType type) const {
   header.free_end = header.reserved_start;
 
   // Write the node back to the file.
-  writeBack(node_map);
-
+  if (write_back) {
+    writeBack(node_map);
+  }
   return node_map;
 }
 
@@ -67,7 +68,8 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
     BTreeNodeMap node(std::move(*page));
     // Make sure the magic number is correct. This is an assert, because if it's not correct, something is
     // very wrong with the database itself.
-    NOSQL_ASSERT(node.GetHeader().magic_number == ToUInt64("NOSQLBTR"), "invalid magic number in page " << page_number);
+    NOSQL_ASSERT(node.GetHeader().magic_number == ToUInt64("NOSQLBTR"),
+                 "invalid magic number in page " << page_number);
     return node;
   }
   return {};
@@ -75,6 +77,8 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
 
 bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) const {
   BTreePageHeader& header = node_map.GetHeader();
+  LOG_SEV(Debug) << "Adding element to " << node_map.GetPageNumber() << ", data size is "
+                 << data.serialized_value.size() << " bytes, unique-keys = " << unique_keys << ".";
 
   // Check if there is enough free space to add the data.
   // Must store:
@@ -118,8 +122,9 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   // TODO: Implement overflow pages.
 
   if (auto defragmented_space = header.GetDefragmentedFreeSpace(); defragmented_space < required_space) {
-    LOG_SEV(Trace) << "Not enough space to add element to node, required space was " << required_space
-                   << ", defragmented space was " << defragmented_space << "." << lightning::NewLineIndent
+    LOG_SEV(Trace) << "Not enough space to add element to node " << node_map.GetPageNumber()
+                   << ", required space was " << required_space << ", defragmented space was "
+                   << defragmented_space << "." << lightning::NewLineIndent
                    << "Page number: " << header.page_number;
     return false;
   }
@@ -150,7 +155,8 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 
   if (data.serialize_data_size) {
     // Write the size of the value.
-    // TODO: What to do if we need an overflow page. This obviously only works as is if we are storing the whole
+    // TODO: What to do if we need an overflow page. This obviously only works as is if we are storing the
+    // whole
     //  entry here.
     auto data_size = static_cast<entry_size_t>(data.serialized_value.size());
     std::memcpy(ptr, reinterpret_cast<const std::byte*>(&data_size), sizeof(entry_size_t));
@@ -232,6 +238,10 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
 SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreData> data) {
   // Balanced split: create a new page, move half of the elements to the new page.
 
+  auto&& header = node.GetHeader();
+  LOG_SEV(Debug) << "Splitting node on page " << node.GetPageNumber() << " with " << node.GetNumPointers()
+                 << " pointers.";
+
   // We can use this function to split leaf or interior nodes.
   auto new_node = newNodePage(node.GetType());
 
@@ -246,15 +256,12 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   // Get the split key.
   if (node.IsPointersPage()) {
-    // If this is a pointers page, we need to deal with the "rightmost pointer" as well.
-    new_node.GetHeader().additional_data = node.GetHeader().additional_data;
-
     // New rightmost pointer for the left cell is the rightmost pointer. This used to be in a cell, now we
     // move it to be the rightmost pointer. The value that this cell corresponded to will be bubbled up to be
     // the split value in the parent.
     auto pointers_cell = std::get<PointersNodeCell>(
         node.getCell(pointers[static_cast<unsigned long>(num_elements_to_move - 1)]));
-    node.GetHeader().additional_data = pointers_cell.page_number;
+    header.additional_data = pointers_cell.page_number;
 
     return_data.split_key = pointers_cell.key;
   }
@@ -294,7 +301,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   // "Free" the rightmost num_elements_to_move pointers in the original node.
   // TODO: Create a linked list of blocks of newly freed space? Or vacuum?
-  node.GetHeader().free_start -= static_cast<page_size_t>(num_elements_to_move) * sizeof(page_size_t);
+  header.free_start -= static_cast<page_size_t>(num_elements_to_move) * sizeof(page_size_t);
 
   // =======================================
   // Potentially add data.
@@ -334,8 +341,12 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   auto&& root_header = root->GetHeader();
   NOSQL_ASSERT(root, "could not find root node");
 
-  auto left_child = newNodePage(BTreePageType::Leaf);
-  auto right_child = newNodePage(BTreePageType::Leaf);
+  // The type of child trees that we need depends on the type of the root node.
+  BTreePageType child_type = root->IsPointersPage() ? BTreePageType::Internal : BTreePageType::Leaf;
+
+  // We will write back these nodes below.
+  auto left_child = newNodePage(child_type, false);
+  auto right_child = newNodePage(child_type, false);
   auto left_page_number = left_child.GetPageNumber();
   auto right_page_number = right_child.GetPageNumber();
 
@@ -354,9 +365,18 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
         [&](auto&& cell) {
           using T = std::decay_t<decltype(cell)>;
           if constexpr (std::is_same_v<T, PointersNodeCell>) {
-            NOSQL_ASSERT(addElementToNode(
-                             node_to_add_to, cell.key, cell.page_number, false /* DON'T store size */, true),
-                         "we should be able to add to this cell");
+            if (i == num_for_left) {
+              // Add this page as the rightmost pointer.
+              node_to_add_to.GetHeader().additional_data = cell.page_number;
+              LOG_SEV(Trace) << "Setting the rightmost pointer in the right child (P"
+                             << node_to_add_to.GetPageNumber() << ") to " << cell.page_number << ".";
+            }
+            else {
+              NOSQL_ASSERT(
+                  addElementToNode(
+                      node_to_add_to, cell.key, cell.page_number, false /* DON'T store size */, true),
+                  "we should be able to add to this cell");
+            }
           }
           else if constexpr (std::is_same_v<T, DataNodeCell>) {
             NOSQL_ASSERT(
@@ -370,10 +390,19 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
         cell);
   }
 
+  // If the root was a pointers page, we need to set the rightmost pointer in the root to the right child.
+  if (root_header.IsPointersPage()) {
+    right_child.GetHeader().additional_data = root_header.additional_data;
+    LOG_SEV(Trace) << "Setting the rightmost pointer in the right child (P" << right_child.GetPageNumber()
+                   << ") to " << root_header.additional_data << ".";
+  }
+
   // Add data, if any.
   if (data) {
     auto& node_to_add_to = data->key < split_key ? left_child : right_child;
-    addElementToNode(node_to_add_to, *data, true /* DO store size */);
+    // Only store the size of the root was NOT a pointers page (meaning we expect data to be stored, not
+    // pointers).
+    addElementToNode(node_to_add_to, *data, !root->IsPointersPage());
     LOG_SEV(Debug) << "Added the data to node on page " << node_to_add_to.GetPageNumber() << ".";
   }
 
@@ -411,30 +440,34 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
 
   auto&& header = node.GetHeader();
 
-  page_size_t offsets[256];
+  std::pair<page_size_t, page_size_t> offsets[256];
   page_size_t num_pointers = node.GetNumPointers();
   auto pointers = node.getPointers();
   for (page_size_t i = 0; i < num_pointers; ++i) {
-    offsets[i] = pointers[i];
+    offsets[i] = {pointers[i], i};
   }
 
   page_size_t next_point = header.reserved_start;
-  std::sort(offsets, offsets + num_pointers, std::greater{});
+  std::sort(offsets, offsets + num_pointers, std::greater {});
   for (page_size_t i = 0; i < num_pointers; ++i) {
+    auto [offset, pointer_number] = offsets[i];
     // Move the cell to the rightmost position possible.
-    auto cell = node.getCell(offsets[i]);
+    auto cell = node.getCell(offset);
     // Get the size of the cell.
     auto cell_size = std::visit([](auto&& cell) { return cell.GetSize(); }, cell);
 
     // Adjust the next point to be at the start of where the cell must be copied.
     next_point -= cell_size;
 
-    LOG_SEV(Trace) << "  * Moving cell " << i << " from " << offsets[i] << " to " << next_point << " (size "
+    LOG_SEV(Trace) << "  * Moving cell " << i << " from " << offset << " to " << next_point << " (size "
                    << cell_size << ").";
 
-    auto original_span = node.page_.GetSpan(offsets[i], static_cast<page_size_t>(cell_size));
+    auto original_span = node.page_.GetSpan(offset, static_cast<page_size_t>(cell_size));
     auto destination_span = node.page_.GetSpan(next_point, cell_size);
     std::ranges::copy(original_span, destination_span.begin());
+
+    // Update the pointer.
+    pointers[pointer_number] = next_point;
   }
   // Set the updated free-end location.
   header.free_end = next_point;

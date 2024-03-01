@@ -95,7 +95,10 @@ page_number_t DataAccessLayer::getNewPage() {
 
   auto page_number = free_list_.GetNextPage();
   if (page_number == getNumAllocatedPages() - 1) {
-    std::filesystem::resize_file(file_path_, GetPageSize() * (page_number + 1));
+    auto file_size = GetPageSize() * (page_number + 1);
+    std::filesystem::resize_file(file_path_, file_size);
+    LOG_SEV(Debug) << "Getting new page (" << page_number << "), resizing file " << file_path_ << " to size "
+                   << file_size << ".";
   }
   return page_number;
 }

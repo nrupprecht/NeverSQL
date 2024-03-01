@@ -53,7 +53,7 @@ public:
 
   // private:
 
-  BTreeNodeMap newNodePage(BTreePageType type) const;
+  BTreeNodeMap newNodePage(BTreePageType type, bool write_back = true) const;
 
   std::optional<BTreeNodeMap> loadNodePage(page_number_t page_number) const;
 

@@ -47,6 +47,8 @@ class PageInspector;
 class BTreeNodeMap {
   friend class BTreeManager;
 
+  friend class DataManager;
+
   friend class utility::PageInspector;
 
 public:
