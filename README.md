@@ -20,15 +20,34 @@ and [NeverSQL/utility/HexDump.cpp](source/NeverSQL/utility/HexDump.cpp).
 
 ![Alt text](./images/hexdump-example-1.png)
 
+There is also a tool to do an analysis of a BTree page node. This is implemented
+in [NeverSQL/utility/PageDump.h](include/NeverSQL/utility/PageDump.h)
+and [NeverSQL/utility/PageDump.cpp](source/NeverSQL/utility/PageDump.cpp).
+
+![Alt text](./images/pagedump-example-1.png)
+
+This can be called like this (assuming the page referenced is part of a BTree):
+
+```C++
+neversql::DataManager manager(database_path);
+// Assuming that page 3 holds a BTree node.
+manager.NodeDumpPage(3, std::cout);
+```
+
 ## Notes
 
-Some useful resources on databases and database implementations.
-
-* https://betterprogramming.pub/build-a-nosql-database-from-the-scratch-in-1000-lines-of-code-8ed1c15ed924
-* SQLite database format: https://sqlite.org/fileformat.html
+Some useful resources on databases and database implementations:
+* Small example of a simple database:
+  * https://betterprogramming.pub/build-a-nosql-database-from-the-scratch-in-1000-lines-of-code-8ed1c15ed924
+* SQLite
+  * Database format: https://sqlite.org/fileformat.html
+  * Write ahead log: https://sqlite.org/wal.html
 * Slotted pages:
     * https://siemens.blog/posts/database-page-layout/
-* PostgreSQL btree: https://www.postgresql.org/docs/current/btree-behavior.html
+* PostgreSQL
+  * Internals: https://www.postgresql.org/docs/current/internals.html
+    * btree: https://www.postgresql.org/docs/current/btree-behavior.html
+    * Data layout: https://www.postgresql.org/docs/current/storage-page-layout.html
 
 # Building and installing
 

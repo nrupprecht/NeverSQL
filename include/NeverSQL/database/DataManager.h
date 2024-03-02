@@ -37,9 +37,14 @@ public:
   // Debugging and Diagnostic Functions
   // ========================================
 
+  //! \brief Hex dump a page to the given output stream.
   bool HexDumpPage(page_number_t page_number, std::ostream& out, utility::HexDumpOptions options = {}) const;
 
+  //! \brief Dump the contents of a node page to the given output stream, getting the B-tree node information.
   bool NodeDumpPage(page_number_t page_number, std::ostream& out) const;
+
+  //! \brief Get the data access layer, so it can be queried for information.
+  const DataAccessLayer& GetDataAccessLayer() const { return data_access_layer_; }
 private:
   //! \brief The data access layer for the database.
   DataAccessLayer data_access_layer_;

@@ -237,6 +237,8 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
 
 SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreData> data) {
   // Balanced split: create a new page, move half of the elements to the new page.
+  // Unbalanced split: move all, or almost all, elements to the new page. Most efficient for adding
+  // consecutive keys.
 
   auto&& header = node.GetHeader();
   LOG_SEV(Debug) << "Splitting node on page " << node.GetPageNumber() << " with " << node.GetNumPointers()
@@ -249,7 +251,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   // Divide elements between the two nodes.
   page_size_t num_elements = node.GetNumPointers();
-  page_size_t num_elements_to_move = num_elements / 2;
+  page_size_t num_elements_to_move = num_elements - 1;
 
   // Interior node.
   auto pointers = node.getPointers();
