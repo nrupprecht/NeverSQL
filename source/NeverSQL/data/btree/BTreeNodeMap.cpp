@@ -95,7 +95,8 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
   if (last_cell.key < key) {
     auto&& header = GetHeader();
     auto next_page = header.additional_data;
-    NOSQL_ASSERT(next_page != 0, "next page cannot be the 0 page");
+    NOSQL_ASSERT(next_page != 0,
+                 "rightmost pointer in page " << GetPageNumber() << " set to 0, error in rightmost pointer");
     return next_page;
   }
   // Get the offset to the first key that is greater
