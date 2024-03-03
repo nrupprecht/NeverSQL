@@ -4,7 +4,6 @@
 
 #include "NeverSQL/utility/PageDump.h"
 // Other files.
-#include <format>
 #include <numeric>
 
 #include "NeverSQL/utility/HexDump.h"
