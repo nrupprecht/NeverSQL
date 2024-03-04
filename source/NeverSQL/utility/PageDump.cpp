@@ -13,8 +13,6 @@ namespace neversql::utility {
 
 
 void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
-  // First, inspect the header.
-  auto&& header = node.GetHeader();
 
   lightning::memory::StringMemoryBuffer buffer;
 
@@ -23,34 +21,27 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   std::vector<std::string> cell_types;
   std::vector<primary_key_t> primary_keys;
   std::vector<entry_size_t> data_size;
-  std::vector<std::span<const char>> data;
+  std::vector<std::string> data;
 
   // Now traverse the offsets.
   auto pointers = node.getPointers();
   for (std::size_t i = 0; i < pointers.size(); ++i) {
     numbers.push_back(i);
     offsets.push_back(pointers[i]);
-
-    // out << "Pointer " << i << ": Offset=" << pointers[i] << "   ==>  ";
     auto cell = node.getCell(pointers[i]);
     std::visit(
         [&](auto&& cell) {
           using T = std::decay_t<decltype(cell)>;
           if constexpr (std::is_same_v<T, DataNodeCell>) {
-            // out << " (Data cell) PK=" << cell.key << " Sz=" << cell.size_of_entry;
             auto view = cell.SpanValue();
             std::string_view sv{reinterpret_cast<const char*>(view.data()), view.size()};
-            // out << " Data={" << sv << "}";
-
-            cell_types.push_back("Data cell");
+            cell_types.emplace_back("Data cell");
             primary_keys.push_back(cell.key);
             data_size.push_back(cell.size_of_entry);
-            data.push_back(sv);
+            data.emplace_back(sv);
           }
           else if constexpr (std::is_same_v<T, PointersNodeCell>) {
-            // out << " (Pointer cell) PK=" << cell.key << " Page=" << cell.page_number;
-
-            cell_types.push_back("Pointer cell");
+            cell_types.emplace_back("Pointer cell");
             primary_keys.push_back(cell.key);
             data_size.push_back(0);
             data.push_back(std::to_string(cell.page_number));
@@ -103,6 +94,9 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');
     out << std::endl;
   }
+
+  // Get the node header.
+  auto&& header = node.GetHeader();
 
   std::string_view sv {reinterpret_cast<const char*>(&header.magic_number), sizeof(header.magic_number)};
   out << lightning::formatting::Format("|  {:<20}\"{@BRED}{}{@RESET}\"\n", "Magic number:", std::string(sv));
