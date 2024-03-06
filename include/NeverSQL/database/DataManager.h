@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "NeverSQL/data/DataAccessLayer.h"
+#include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTree.h"
 #include "NeverSQL/utility/HexDump.h"
 
@@ -48,6 +48,8 @@ public:
 private:
   //! \brief The data access layer for the database.
   DataAccessLayer data_access_layer_;
+
+  mutable PageCache page_cache_;
 
   BTreeManager primary_index_;
 };

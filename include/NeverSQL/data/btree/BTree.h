@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "NeverSQL/containers/FixedStack.h"
-#include "NeverSQL/data/DataAccessLayer.h"
+#include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
 
 namespace neversql {
@@ -46,8 +46,8 @@ class BTreeManager {
   friend class DataManager;
 
 public:
-  explicit BTreeManager(DataAccessLayer* data_access_layer) noexcept
-      : data_access_layer_(data_access_layer) {}
+  explicit BTreeManager(PageCache* page_cache) noexcept
+      : page_cache_(page_cache) {}
 
   void AddValue(primary_key_t key, std::span<const std::byte> value);
 
@@ -79,19 +79,17 @@ public:
                         bool store_size = true,
                         bool unique_keys = true) const {
     if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
-      return addElementToNode(node_map,
-                              StoreData {.key = key,
-                                         .serialized_value = value,
-                                         .serialize_data_size = store_size},
-                              unique_keys);
+      return addElementToNode(
+          node_map,
+          StoreData {.key = key, .serialized_value = value, .serialize_data_size = store_size},
+          unique_keys);
     }
     else {
       auto data_span = std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(value));
-      return addElementToNode(node_map,
-                              StoreData {.key = key,
-                                         .serialized_value = data_span,
-                                         .serialize_data_size = store_size},
-                              unique_keys);
+      return addElementToNode(
+          node_map,
+          StoreData {.key = key, .serialized_value = data_span, .serialize_data_size = store_size},
+          unique_keys);
     }
   }
 
@@ -119,7 +117,7 @@ public:
   // =================================================================================================
 
   //! \brief Pointer to the NeverSQL database's data access layer.
-  DataAccessLayer* data_access_layer_;
+  PageCache* page_cache_ {};
 
   //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
   //!
@@ -131,6 +129,10 @@ public:
 
   //! \brief The maximum entry size, in bytes, before an overflow page is needed
   page_size_t max_entry_size_ = 256;
+
+  //! \brief The maximum number of entries per page.
+  //! NOTE(Nate): I am adding this for now to make testing easier.
+  page_size_t max_entries_per_page_ = 10000;
 };
 
 }  // namespace neversql

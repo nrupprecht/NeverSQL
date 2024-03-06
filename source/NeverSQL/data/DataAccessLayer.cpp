@@ -50,10 +50,10 @@ bool DataAccessLayer::IsInitialized() const {
   return !file_path_.empty();
 }
 
-Page DataAccessLayer::GetNewPage() {
-  auto page_number = getNewPage();
-  // Since the page is new, it has no real data.
-  return Page(page_number, GetPageSize());
+void DataAccessLayer::GetNewPage(Page& page) {
+  // Allocate a page and return the page number.
+  page.SetPageNumber(getNewPage());
+  page.page_size_ = GetPageSize();
 }
 
 void DataAccessLayer::WriteBackPage(const Page& page) const {
@@ -76,24 +76,25 @@ page_size_t DataAccessLayer::GetPageSize() const {
   return meta_.GetPageSize();
 }
 
-std::optional<Page> DataAccessLayer::GetPage(page_number_t page_number) const {
-  return getPage(page_number, true);
+void DataAccessLayer::GetPage(page_number_t page_number, Page& page) const {
+  return getPage(page_number, page, true);
 }
 
 uint64_t DataAccessLayer::getNumAllocatedPages() const {
   return free_list_.GetNumAllocatedPages();
 }
 
-std::optional<Page> DataAccessLayer::getPage(page_number_t page_number, bool safe_mode) const {
-  Page page(page_number, GetPageSize());
+void DataAccessLayer::getPage(page_number_t page_number, Page& page, bool safe_mode) const {
+  page.SetPageNumber(page_number);
+  page.page_size_ = GetPageSize();
   readPage(page, safe_mode);
-  return page;
 }
 
 page_number_t DataAccessLayer::getNewPage() {
   std::unique_lock guard(read_write_lock_);
 
-  auto page_number = free_list_.GetNextPage();
+  // Note: since this free list can allocate new pages, the return will never be a nullopt.
+  auto page_number = *free_list_.GetNextPage();
   if (page_number == getNumAllocatedPages() - 1) {
     auto file_size = GetPageSize() * (page_number + 1);
     std::filesystem::resize_file(file_path_, file_size);
@@ -116,7 +117,7 @@ void DataAccessLayer::writePage(const Page& page) const {
 
   NOSQL_REQUIRE(IsInitialized(), "DAL is not initialized");
   NOSQL_REQUIRE(page.GetPageNumber() < getNumAllocatedPages(),
-                "page number out of bounds, was " << page.page_number_ << ", max page number is "
+                "page number out of bounds, was " << page.GetPageNumber() << ", max page number is "
                                                   << getNumAllocatedPages());
 
   auto fout = getOutputFileStream(file_path_);
@@ -128,13 +129,15 @@ void DataAccessLayer::readPage(Page& page, bool safe_mode) const {
   std::shared_lock guard(read_write_lock_);
 
   NOSQL_REQUIRE(IsInitialized(), "DAL is not initialized");
+  NOSQL_REQUIRE(page.GetPageSize() == GetPageSize(),
+                "page size mismatch, page had size " << page.GetPageSize() << ", but DAL page size is "
+                                                     << GetPageSize());
   if (safe_mode) {
     NOSQL_REQUIRE(page.GetPageNumber() < getNumAllocatedPages(),
                   "page number out of bounds, was " << page.GetPageNumber() << ", max page number is "
                                                     << getNumAllocatedPages());
   }
   std::ifstream fin(file_path_, std::ios::binary);
-  page.resize(GetPageSize());
   fin.seekg(static_cast<std::streamoff>(page.GetPageNumber() * GetPageSize()));
   fin.read(page.GetChars(), static_cast<std::streamsize>(GetPageSize()));
 }
@@ -149,52 +152,35 @@ void DataAccessLayer::createDB() {
   meta_.free_list_page_ = free_list_page;
 
   // Write the meta to page 0.
-  if (auto page = GetPage(0)) {
-    serialize(*page, meta_);
-    writePage(*page);
-  }
-  else {
-    LOG_SEV(Error) << "Could not get meta page.";
-    NOSQL_FAIL("could not get meta page");
-  }
+  FreestandingPage freestanding_page(0, GetPageSize());
+  GetPage(0 /* meta page */, freestanding_page);
+
+  serialize(freestanding_page, meta_);
+  writePage(freestanding_page);
 
   // Write the free list to the free list page.
-  if (auto page = GetPage(free_list_page)) {
-    serialize(*page, free_list_);
-    writePage(*page);
-  }
-  else {
-    LOG_SEV(Error) << "Could not get free list page.";
-    NOSQL_FAIL("could not get free list page");
-  }
+  GetPage(free_list_page, freestanding_page);
 
-  // NOTE: Not creating the main index page yet, since the lack of this page indicates to the DataManager that the
-  // database is being set up.
+  serialize(freestanding_page, free_list_);
+  writePage(freestanding_page);
+
+  // NOTE: Not creating the main index page yet, since the lack of this page indicates to the DataManager that
+  // the database is being set up.
 }
 
 void DataAccessLayer::openDB() {
   NOSQL_REQUIRE(std::filesystem::exists(file_path_), "file '" << file_path_ << "' not exist");
 
-  // Open the meta page and store it.
-  if (auto page = getPage(0, false)) {
-    deserialize(*page, meta_);
-  }
-  else {
-    LOG_SEV(Error) << "Could not get meta page.";
-    NOSQL_FAIL("could not get meta page");
-  }
+  // Open the meta page and store it. The meta page is always page 0.
+  FreestandingPage freestanding_page(0, GetPageSize());
+  getPage(0, freestanding_page, false);
+  // Deserialize the meta page, in the freestanding_page, into the meta structure.
+  deserialize(freestanding_page, meta_);
 
   // Find the free-list page. Still have to use "unsafe" get page, since we haven't loaded the free list yet
   // to tell us whether loading a page is "safe!"
-  if (auto free_list_page = getPage(meta_.free_list_page_, false)) {
-    deserialize(*free_list_page, free_list_);
-  }
-  else {
-    LOG_SEV(Error) << "Could not get free list page.";
-    NOSQL_FAIL("could not get free list page");
-  }
-
-  // TODO: Main index page.
+  getPage(meta_.free_list_page_, freestanding_page, false);
+  deserialize(freestanding_page, free_list_);
 }
 
 void DataAccessLayer::initialize() {
@@ -211,7 +197,7 @@ void DataAccessLayer::initialize() {
 }
 
 void DataAccessLayer::updateMeta() const {
-  Page meta_page(0, GetPageSize());
+  FreestandingPage meta_page(0, GetPageSize());
   serialize(meta_page, meta_);
   writePage(meta_page);
 }
@@ -229,7 +215,8 @@ void DataAccessLayer::updateFreeList() const {
 
   try {
     // Get the free list page.
-    Page free_list_page(meta_.free_list_page_, GetPageSize());
+    FreestandingPage free_list_page(meta_.free_list_page_, GetPageSize());
+    // Serialize the free list into the page.
     serialize(free_list_page, free_list_);
     // Write the page back to storage.
     writePage(free_list_page);
@@ -242,6 +229,8 @@ void DataAccessLayer::updateFreeList() const {
 void DataAccessLayer::serialize(Page& page, const FreeList& free_list) {
   // TODO: Check that there is enough space left in the meta page.
   // TODO: Allow the free list to be written to multiple pages?
+
+  // TODO: This needs to interact with the WAL.
 
   auto* buffer = page.GetChars();
 

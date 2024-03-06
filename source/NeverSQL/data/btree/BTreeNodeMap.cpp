@@ -8,11 +8,11 @@
 namespace neversql {
 
 BTreePageHeader& BTreeNodeMap::GetHeader() {
-  return *reinterpret_cast<BTreePageHeader*>(page_.GetData());
+  return *reinterpret_cast<BTreePageHeader*>(page_->GetData());
 }
 
 const BTreePageHeader& BTreeNodeMap::GetHeader() const {
-  return *reinterpret_cast<const BTreePageHeader*>(page_.GetData());
+  return *reinterpret_cast<const BTreePageHeader*>(page_->GetData());
 }
 
 BTreePageType BTreeNodeMap::GetType() const {
@@ -20,11 +20,15 @@ BTreePageType BTreeNodeMap::GetType() const {
 }
 
 page_number_t BTreeNodeMap::GetPageNumber() const {
-  return page_.GetPageNumber();
+  return page_->GetPageNumber();
+}
+
+page_size_t BTreeNodeMap::GetPageSize() const {
+  return page_->GetPageSize();
 }
 
 const Page& BTreeNodeMap::GetPage() const {
-  return page_;
+  return *page_;
 }
 
 page_size_t BTreeNodeMap::GetNumPointers() const {
@@ -50,7 +54,7 @@ bool BTreeNodeMap::IsRootPage() const noexcept {
   return GetHeader().IsRootPage();
 }
 
-BTreeNodeMap::BTreeNodeMap(Page&& page) noexcept
+BTreeNodeMap::BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept
     : page_(std::move(page)) {}
 
 std::optional<page_size_t> BTreeNodeMap::getCellByPK(primary_key_t key) const {
@@ -104,27 +108,27 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
   NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << key);
   // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
   // number.
-  return *reinterpret_cast<const page_number_t*>(page_.GetPtr(*offset + sizeof(primary_key_t)));
+  return *reinterpret_cast<const page_number_t*>(page_->GetPtr(*offset + sizeof(primary_key_t)));
 }
 
 std::span<page_size_t> BTreeNodeMap::getPointers() {
   auto&& header = GetHeader();
   auto start_ptrs = header.GetPointersStart();
   auto num_pointers = header.GetNumPointers();
-  return std::span(page_.GetPtr<page_size_t>(start_ptrs), num_pointers);
+  return std::span(page_->GetPtr<page_size_t>(start_ptrs), num_pointers);
 }
 
 std::span<const page_size_t> BTreeNodeMap::getPointers() const {
   auto&& header = GetHeader();
   auto start_ptrs = header.GetPointersStart();
   auto num_pointers = header.GetNumPointers();
-  return std::span(page_.GetPtr<const page_size_t>(start_ptrs), num_pointers);
+  return std::span(page_->GetPtr<const page_size_t>(start_ptrs), num_pointers);
 }
 
 primary_key_t BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
   // Copy so we don't have to worry about alignment.
   primary_key_t pk;
-  std::memcpy(&pk, page_.GetPtr(cell_offset), sizeof(primary_key_t));
+  std::memcpy(&pk, page_->GetPtr(cell_offset), sizeof(primary_key_t));
   return pk;
 }
 
@@ -139,12 +143,12 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
   if (header.IsPointersPage()) {
     return PointersNodeCell {
         getKeyForCell(cell_offset),
-        *reinterpret_cast<const page_number_t*>(page_.GetPtr(cell_offset + sizeof(primary_key_t)))};
+        *reinterpret_cast<const page_number_t*>(page_->GetPtr(cell_offset + sizeof(primary_key_t)))};
   }
   return DataNodeCell {
       getKeyForCell(cell_offset),
-      page_.CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),
-      page_.GetPtr(cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t))};
+      page_->CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),
+      page_->GetPtr(cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t))};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {

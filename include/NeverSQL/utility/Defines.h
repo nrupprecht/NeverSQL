@@ -41,3 +41,26 @@ inline uint64_t ToUInt64(const char* str) {
 }
 
 }  // namespace neversql
+
+namespace std {
+
+inline void format_logstream(const exception& ex, lightning::RefBundle& handler) {
+  using namespace lightning;
+  using namespace lightning::formatting;
+
+  handler << NewLineIndent
+          << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red)
+          << AnsiColorSegment(AnsiForegroundColor::Yellow); // Exception in yellow.
+  const char* begin = ex.what(), *end = ex.what();
+  while (*end) {
+    for (; *end && *end != '\n'; ++end); // Find next newline.
+    handler << NewLineIndent << string_view(begin, static_cast<string_view::size_type>(end - begin));
+    for (; *end && *end == '\n'; ++end); // Pass any number of newlines.
+    begin = end;
+  }
+  handler << AnsiResetSegment
+          << NewLineIndent // Reset colors to default.
+          << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red);
+}
+
+} // namespace std

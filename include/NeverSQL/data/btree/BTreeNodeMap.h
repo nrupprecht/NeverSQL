@@ -64,6 +64,9 @@ public:
   //! \brief Get the page number of the page this node is written in.
   page_number_t GetPageNumber() const;
 
+  //! \brief Get the size of a page.
+  page_size_t GetPageSize() const;
+
   //! \brief Get the underlying page.
   NO_DISCARD const Page& GetPage() const;
 
@@ -89,7 +92,7 @@ public:
 
 private:
   //! \brief Create a new BTreeNodeMap wrapping a page. No checks are done to see if the page is a valid B-tree node.
-  explicit BTreeNodeMap(Page&& page) noexcept;
+  explicit BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept;
 
   //! \brief Get an offset to the start of an entry, indicated by its primary key, in a leaf node.
   //!
@@ -137,7 +140,7 @@ private:
   void sortKeys();
 
   //! \brief The underlying page, that this class interprets as a B-tree node.
-  Page page_;
+  std::unique_ptr<Page> page_;
 };
 
 }  // namespace neversql

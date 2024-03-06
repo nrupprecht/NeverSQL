@@ -15,6 +15,9 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
     for (std::size_t i = 0; i < result.path.Size(); ++i) {
       handler << lightning::NewLineIndent << "  * Page " << *result.path[i];
     }
+    if (result.node) {
+      handler << lightning::NewLineIndent << "Found node is " << result.node->GetPageNumber() << ".";
+    }
   }
 
   // Check if we can add the element to the node (without re-balancing).
@@ -23,10 +26,13 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
   // element.
   // TODO: More complex strategies could include vacuuming, looking for fragmented free space, etc.
   auto space_available = result.node->GetDefragmentedFreeSpace();
+  auto necessary_space = sizeof(page_size_t) + sizeof(primary_key_t) + sizeof(entry_size_t) + value.size();
+  auto num_elements = result.node->GetNumPointers();
   LOG_SEV(Trace) << "Free space in node " << result.node->GetPageNumber() << " is " << space_available
-                 << " bytes.";
+                 << " bytes. Number of elements is " << num_elements << ". Total size of this entry is "
+                 << necessary_space << " bytes.";
 
-  if (space_available >= sizeof(page_size_t) + sizeof(primary_key_t) + sizeof(entry_size_t) + value.size()) {
+  if (necessary_space <= space_available && num_elements + 1 <= max_entries_per_page_) {
     // TODO: Return expected type, or some more detailed info, generally, this will fail b/c of key
     //  uniqueness violations.
     NOSQL_ASSERT(
@@ -42,18 +48,18 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
 }
 
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, bool write_back) const {
-  auto page = data_access_layer_->GetNewPage();
-  auto page_size = page.GetPageSize();
-  BTreeNodeMap node_map(std::move(page));
+  BTreeNodeMap node_map(page_cache_->GetNewPage());
+
+  // TODO: These modifications need to go in the WAL.
 
   BTreePageHeader& header = node_map.GetHeader();
   header.magic_number = ToUInt64("NOSQLBTR");  // Set the magic number.
-  header.page_number = page.GetPageNumber();
+  header.page_number = node_map.GetPageNumber();
   header.flags = static_cast<uint8_t>(type);
 
   // Right now, not allocating any reserved space.
   header.free_start = sizeof(BTreePageHeader);
-  header.reserved_start = page_size;
+  header.reserved_start = node_map.GetPageSize();
   header.free_end = header.reserved_start;
 
   // Write the node back to the file.
@@ -64,21 +70,19 @@ BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, bool write_back) cons
 }
 
 std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number) const {
-  if (auto page = data_access_layer_->GetPage(page_number)) {
-    BTreeNodeMap node(std::move(*page));
-    // Make sure the magic number is correct. This is an assert, because if it's not correct, something is
-    // very wrong with the database itself.
-    NOSQL_ASSERT(node.GetHeader().magic_number == ToUInt64("NOSQLBTR"),
-                 "invalid magic number in page " << page_number);
-    return node;
-  }
-  return {};
+  BTreeNodeMap node(page_cache_->GetPage(page_number));
+  // Make sure the magic number is correct. This is an assert, because if it's not correct, something is
+  // very wrong with the database itself.
+  NOSQL_ASSERT(node.GetHeader().magic_number == ToUInt64("NOSQLBTR"),
+               "invalid magic number in page " << page_number);
+  return node;
 }
 
 bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) const {
   BTreePageHeader& header = node_map.GetHeader();
-  LOG_SEV(Debug) << "Adding element to " << node_map.GetPageNumber() << ", data size is "
-                 << data.serialized_value.size() << " bytes, unique-keys = " << unique_keys << ".";
+  LOG_SEV(Debug) << "Adding element with pk = " << data.key << " to " << node_map.GetPageNumber()
+                 << ", data size is " << data.serialized_value.size()
+                 << " bytes, unique-keys = " << unique_keys << ".";
 
   // Check if there is enough free space to add the data.
   // Must store:
@@ -130,7 +134,7 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   }
 
   auto entry_end = header.free_end;
-  auto* entry_end_ptr = node_map.page_.GetData() + entry_end;
+  auto* entry_end_ptr = node_map.page_->GetData() + entry_end;
   // Cell needs cell_space bytes.
   auto* entry_start = entry_end_ptr - cell_space;
 
@@ -272,6 +276,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
         std::get<DataNodeCell>(node.getCell(pointers[static_cast<unsigned long>(num_elements_to_move - 1)]));
     return_data.split_key = data_cell.key;
   }
+  LOG_SEV(Trace) << "Split key will be " << return_data.split_key << ".";
 
   // Move the low nodes to the new node.
   // That way, we can just add the new node with the split key as a single cell to the parent.
@@ -310,11 +315,14 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   // =======================================
 
   if (data) {
-    if (data->key < return_data.split_key) {
-      addElementToNode(node, data->key, data->serialized_value);
+    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << data->key << ".";
+    if (data->key <= return_data.split_key) {
+      // Add to left node.
+      addElementToNode(new_node, data->key, data->serialized_value);
     }
     else {
-      addElementToNode(new_node, data->key, data->serialized_value);
+      // Add to right node.
+      addElementToNode(node, data->key, data->serialized_value);
     }
   }
 
@@ -322,10 +330,11 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   // Write back node and new node.
   // =======================================
 
-  writeBack(new_node);
+  // writeBack(new_node);
 
   vacuum(node);
-  writeBack(node);
+
+  // writeBack(node);
 
   LOG_SEV(Trace) << "  * After split, original node has " << node.GetDefragmentedFreeSpace()
                  << " bytes of de-fragmented free space.";
@@ -401,7 +410,8 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
 
   // Add data, if any.
   if (data) {
-    auto& node_to_add_to = data->key < split_key ? left_child : right_child;
+    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << data->key << ".";
+    auto& node_to_add_to = data->key <= split_key ? left_child : right_child;
     // Only store the size of the root was NOT a pointers page (meaning we expect data to be stored, not
     // pointers).
     addElementToNode(node_to_add_to, *data, !root->IsPointersPage());
@@ -422,6 +432,7 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   LOG_SEV(Trace) << "Set the rightmost pointer in the root node to " << right_page_number << ".";
 
   // Write back the root and the two children.
+  // TODO: Use page_cache_->ReleasePage.
   writeBack(left_child);
   writeBack(right_child);
   writeBack(*root);
@@ -429,7 +440,7 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
 }
 
 void BTreeManager::writeBack(const BTreeNodeMap& node_map) const {
-  data_access_layer_->WriteBackPage(node_map.page_);
+  page_cache_->FlushPage(*node_map.page_);
 }
 
 void BTreeManager::vacuum(BTreeNodeMap& node) const {
@@ -461,11 +472,11 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
     // Adjust the next point to be at the start of where the cell must be copied.
     next_point -= cell_size;
 
-    LOG_SEV(Trace) << "  * Moving cell " << i << " from " << offset << " to " << next_point << " (size "
-                   << cell_size << ").";
+    LOG_SEV(Trace) << "  * Moving cell " << i << " from offset " << offset << " to offset " << next_point
+                   << " (cell size " << cell_size << ").";
 
-    auto original_span = node.page_.GetSpan(offset, static_cast<page_size_t>(cell_size));
-    auto destination_span = node.page_.GetSpan(next_point, cell_size);
+    auto original_span = node.page_->GetSpan(offset, static_cast<page_size_t>(cell_size));
+    auto destination_span = node.page_->GetSpan(next_point, cell_size);
     std::ranges::copy(original_span, destination_span.begin());
 
     // Update the pointer.
@@ -481,13 +492,12 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
 SearchResult BTreeManager::search(primary_key_t key) const {
   SearchResult result;
 
-  auto root = [this] {
+  auto node = [this] {
     auto root = loadNodePage(index_page_);
     NOSQL_ASSERT(root, "could not find root node");
     return std::move(*root);
   }();
 
-  BTreeNodeMap node = std::move(root);
   result.path.Push(node.GetPageNumber());
   // Loop until found. Since this is a (presumably well-formed) B-tree, this should always terminate.
   for (;;) {
@@ -498,6 +508,9 @@ SearchResult BTreeManager::search(primary_key_t key) const {
     }
 
     auto next_page_number = node.searchForNextPageInPointersPage(key);
+
+    NOSQL_REQUIRE(next_page_number != node.GetPageNumber(), "infinite loop detected in search");
+
     result.path.Push(next_page_number);
     auto child = loadNodePage(next_page_number);
     node = std::move(*child);

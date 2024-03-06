@@ -116,6 +116,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
     std::string fmt_string = "\n|{@BWHITE}{:^" + std::to_string(header_width - 2) + "}{@RESET}|\n";
     out << lightning::formatting::Format(fmt_string, "POINTERS INFO");
   }
+
   // Write the table, which contains information about the slotted pages.
   out << table;
 }

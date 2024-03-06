@@ -4,10 +4,10 @@
 
 #pragma once
 
+#include <filesystem>
 #include <set>
 #include <shared_mutex>
 #include <utility>
-#include <filesystem>
 
 #include "NeverSQL/data/FreeList.h"
 #include "NeverSQL/data/Page.h"
@@ -17,9 +17,10 @@ namespace neversql {
 
 //! \brief Manager to read and write pages from persistent memory.
 //!
-//! The DAL is responsible for managing the pages in the database file. It keeps track of structure of the file (e.g. which
-//! pages are free, database information, etc.), and provides an interface to read and write pages. Actual applications are
-//! responsible for interpreting the data in the pages, and serializing/deserializing data to and from the pages.
+//! The DAL is responsible for managing the pages in the database file. It keeps track of structure of the
+//! file (e.g. which pages are free, database information, etc.), and provides an interface to read and write
+//! pages. Actual applications are responsible for interpreting the data in the pages, and
+//! serializing/deserializing data to and from the pages.
 class DataAccessLayer {
   friend class DataManager;
 
@@ -33,8 +34,8 @@ public:
   //! \brief Check whether the DAL is initialized.
   NO_DISCARD bool IsInitialized() const;
 
-  //! \brief Get a new page from the DAL.
-  NO_DISCARD Page GetNewPage();
+  //! \brief Get a new page from the DAL and read its meta data into the provided Page object.
+  void GetNewPage(Page& page);
 
   //! \brief Write a page back to the DAL.
   void WriteBackPage(const Page& page) const;
@@ -48,8 +49,9 @@ public:
   //! \brief Get the size of a page in the DAL.
   NO_DISCARD page_size_t GetPageSize() const;
 
-  //! \brief Get a page from the DAL, if the page exists and is valid (not freed).
-  NO_DISCARD std::optional<Page> GetPage(page_number_t page_number) const;
+  //! \brief Get a page from the DAL, if the page exists and is valid (not freed). Writes the page's
+  //! information into the provided Page object.
+  void GetPage(page_number_t page_number, Page& page) const;
 
   //! \brief Get the meta data.
   const Meta& GetMeta() const { return meta_; }
@@ -65,15 +67,14 @@ private:
   //!
   //! \param page_number
   //! \param safe_mode
-  //! \return
-  NO_DISCARD std::optional<Page> getPage(page_number_t page_number, bool safe_mode = true) const;
+  void getPage(page_number_t page_number, Page& page, bool safe_mode = true) const;
 
   //! \brief Get a new page. This uses the free-list. First, it will try to find an available freed page. If
   //! there are none, it will assign a new page number. In this case, we will need to allocate actual file
   //! space for the new page.
   NO_DISCARD page_number_t getNewPage();
 
-  //! \brief Release a page back to the free list.
+  //! \brief Release a page back to the free list, "deleting" its contents.
   void releasePage(page_number_t page_number);
 
   //! \brief Write a page back to the file. The page must have come from the database file to begin with.

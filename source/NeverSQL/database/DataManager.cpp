@@ -10,7 +10,8 @@ namespace neversql {
 
 DataManager::DataManager(const std::filesystem::path& database_path)
     : data_access_layer_(database_path)
-    , primary_index_(&data_access_layer_) {
+    , page_cache_(16 /* Just a random number for now */, &data_access_layer_)
+    , primary_index_(&page_cache_) {
   // TODO: Make the meta page more independent from the database.
 
   auto&& meta = data_access_layer_.GetMeta();
@@ -45,6 +46,10 @@ RetrievalResult DataManager::Retrieve(primary_key_t key) const {
       result.cell_offset = offset;
       result.value_view = std::get<DataNodeCell>(result.search_result.node->getCell(offset)).SpanValue();
     }
+    else {
+      // Element *DID NOT EXIST IN THE NODE* that it was expected to exist in.
+      result.search_result.node = {};
+    }
   }
   return result;
 }
@@ -52,13 +57,14 @@ RetrievalResult DataManager::Retrieve(primary_key_t key) const {
 bool DataManager::HexDumpPage(page_number_t page_number,
                               std::ostream& out,
                               utility::HexDumpOptions options) const {
-  if (auto page = data_access_layer_.GetPage(page_number)) {
-    auto view = page->GetView();
-    std::istringstream stream(std::string {view});
-    neversql::utility::HexDump(stream, out, options);
-    return true;
+  if (data_access_layer_.GetNumPages() <= page_number) {
+    return false;
   }
-  return false;
+  auto page = page_cache_.GetPage(page_number);
+  auto view = page->GetView();
+  std::istringstream stream(std::string {view});
+  neversql::utility::HexDump(stream, out, options);
+  return true;
 }
 
 bool DataManager::NodeDumpPage(page_number_t page_number, std::ostream& out) const {

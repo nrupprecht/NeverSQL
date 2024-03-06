@@ -47,8 +47,6 @@ manager.NodeDumpPage(3, std::cout);
 ## Notes
 
 Some useful resources on databases and database implementations:
-* Small example of a simple database:
-  * https://betterprogramming.pub/build-a-nosql-database-from-the-scratch-in-1000-lines-of-code-8ed1c15ed924
 * SQLite
   * Database format: https://sqlite.org/fileformat.html
   * Write ahead log: https://sqlite.org/wal.html
@@ -60,6 +58,10 @@ Some useful resources on databases and database implementations:
     * Data layout: https://www.postgresql.org/docs/current/storage-page-layout.html
   * ["The Internals of Postgres"](https://www.interdb.jp/pg/index.html)
 * BSON spec: https://bsonspec.org/, https://bsonspec.org/spec.html
+* Other tutorials / similar projects
+  * https://cstack.github.io/db_tutorial/
+  * https://adambcomer.com/blog/simple-database/motivation-design/
+  * https://betterprogramming.pub/build-a-nosql-database-from-the-scratch-in-1000-lines-of-code-8ed1c15ed924
 
 # Building and installing
 
