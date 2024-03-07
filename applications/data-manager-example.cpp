@@ -39,7 +39,7 @@ int main() {
     for (; pk < num_to_insert; ++pk) {
       std::string str = formatting::Format("Brave new world, page {}.", pk);
       manager.AddValue(
-          pk, std::span<const std::byte>(reinterpret_cast<const std::byte*>(str.data()), str.size()));
+          std::span<const std::byte>(reinterpret_cast<const std::byte*>(str.data()), str.size()));
       if ((pk + 1) % batch_size == 0) {
         auto next_time_point = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(next_time_point - time_point);
@@ -69,26 +69,11 @@ int main() {
   auto total_pages = manager.GetDataAccessLayer().GetNumPages();
   LOG_SEV(Major) << lightning::formatting::Format("Database has {:L} pages.", total_pages);
 
-  //  for (auto page = 2; page < total_pages; ++page) {
-  //    manager.NodeDumpPage(page, std::cout);
-  //    std::cout << std::endl << std::endl;
-  //  }
-
-  //  auto pk = 7000003;
-  //  std::string str = formatting::Format("Brave new world, page {}.", pk);
-  //  manager.AddValue(pk,
-  //                   std::span<const std::byte>(reinterpret_cast<const std::byte*>(str.data()),
-  //                   str.size()));
-  //  if ((pk + 1) % 10'000 == 0) {
-  //    LOG_SEV(Info) << "Inserted " << formatting::Format("{:L}", pk + 1) << " values.";
-  //  }
-
-  //  manager.HexDumpPage(86, std::cout);
-  //  std::cout << std::endl;
-  //
-  manager.NodeDumpPage(75722, std::cout);
+  // Node dump the main index page.
+  manager.NodeDumpPage(2, std::cout);
   std::cout << std::endl;
 
+  // Search for some elements.
   auto first_to_probe = num_to_insert / 2;
   auto last_to_probe = std::min(num_to_insert / 2 + 10, num_to_insert);
   for (primary_key_t pk_probe = first_to_probe; pk_probe < last_to_probe; ++pk_probe) {

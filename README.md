@@ -30,7 +30,11 @@ There is also a tool to do an analysis of a BTree page node. This is implemented
 in [NeverSQL/utility/PageDump.h](include/NeverSQL/utility/PageDump.h)
 and [NeverSQL/utility/PageDump.cpp](source/NeverSQL/utility/PageDump.cpp).
 
+For example, a data page (leaf, or the root when it has no children) will look like this:
 ![Alt text](./images/pagedump-example-1.png)
+
+and a pointers (interior node or root when it has child pages) page will look like this
+![Alt text](./images/pagedump-example-2.png)
 
 The DataManager class can use this function to dump nodes, it can be called like this (assuming the page referenced is
 part of a BTree):

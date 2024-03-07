@@ -22,6 +22,13 @@ DataManager::DataManager(const std::filesystem::path& database_path)
     auto root_page = primary_index_.newNodePage(BTreePageType::RootLeaf);
     LOG_SEV(Trace) << "Root page allocated to be page " << root_page.GetPageNumber() << ".";
 
+    // Allocate space to keep track of the next primary key.
+    root_page.GetHeader().free_end -= sizeof(primary_key_t);
+    root_page.GetHeader().reserved_start -= sizeof(primary_key_t);
+    // Write zero into the reserved space.
+    // TODO: WAL.
+    *reinterpret_cast<primary_key_t*>(root_page.GetPage().GetPtr(root_page.GetHeader().reserved_start)) = 0;
+
     data_access_layer_.setIndexPage(root_page.GetPageNumber());
     primary_index_.index_page_ = root_page.GetPageNumber();
   }
@@ -33,6 +40,10 @@ DataManager::DataManager(const std::filesystem::path& database_path)
 
 void DataManager::AddValue(primary_key_t key, std::span<const std::byte> value) {
   primary_index_.AddValue(key, value);
+}
+
+void DataManager::AddValue(std::span<const std::byte> value) {
+  primary_index_.AddValue(value);
 }
 
 SearchResult DataManager::Search(primary_key_t key) const {

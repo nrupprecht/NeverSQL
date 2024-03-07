@@ -37,7 +37,8 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
     //  uniqueness violations.
     NOSQL_ASSERT(
         addElementToNode(*result.node, key, value),
-        "could not add element to node " << result.node->GetPageNumber() << ", but this should be possible");
+                 "could not add element to node " << result.node->GetPageNumber() << " with pk " << key
+                                                  << ", but this should be possible");
   }
   else {
     // Else, we have to split the node and re-balance the tree.
@@ -51,6 +52,28 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
                  "page " << result.node->GetPageNumber()
                          << " is a pointers page with no additional data, there must be a right pointer");
   }
+}
+
+void BTreeManager::AddValue(std::span<const std::byte> value) {
+  LOG_SEV(Debug) << "Adding value to the B-tree with auto-incrementing key.";
+
+  // Get the next primary key.
+  auto next_key = getNextPrimaryKey();
+  // Add the value with the next primary key.
+  AddValue(next_key, value);
+}
+
+primary_key_t BTreeManager::getNextPrimaryKey() const {
+  auto root = loadNodePage(index_page_);
+  primary_key_t pk {};
+
+  auto* ptr = root->GetPage().GetPtr(root->GetHeader().reserved_start);
+  std::memcpy(&pk, ptr, sizeof(primary_key_t));
+  primary_key_t next_primary_key = pk + 1;
+  std::memcpy(ptr, &next_primary_key, sizeof(primary_key_t));
+
+  LOG_SEV(Trace) << "Next primary key is " << pk << ".";
+  return pk;
 }
 
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type) const {

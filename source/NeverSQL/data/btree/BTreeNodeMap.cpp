@@ -31,6 +31,10 @@ const Page& BTreeNodeMap::GetPage() const {
   return *page_;
 }
 
+NO_DISCARD Page& BTreeNodeMap::GetPage() {
+  return *page_;
+}
+
 page_size_t BTreeNodeMap::GetNumPointers() const {
   return GetHeader().GetNumPointers();
 }

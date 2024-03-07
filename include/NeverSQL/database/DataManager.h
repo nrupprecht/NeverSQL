@@ -28,9 +28,13 @@ public:
   //! \brief Add a value to the database.
   void AddValue(primary_key_t key, std::span<const std::byte> value);
 
+  //! \brief Add a value to the database using an auto incrementing key.
+  void AddValue(std::span<const std::byte> value);
+
   //! \brief Get a search result for a given key.
   SearchResult Search(primary_key_t key) const;
 
+  //! \brief Retrieve a value from the database along with data about the retrieval.
   RetrievalResult Retrieve(primary_key_t key) const;
 
   // ========================================

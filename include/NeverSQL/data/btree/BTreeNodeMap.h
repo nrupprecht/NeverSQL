@@ -69,6 +69,7 @@ public:
 
   //! \brief Get the underlying page.
   NO_DISCARD const Page& GetPage() const;
+  NO_DISCARD Page& GetPage();
 
   //! \brief Get the number of pointers (and therefore cells) in the node.
   NO_DISCARD page_size_t GetNumPointers() const;

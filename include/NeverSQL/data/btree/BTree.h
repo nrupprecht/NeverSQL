@@ -49,9 +49,15 @@ public:
   explicit BTreeManager(PageCache* page_cache) noexcept
       : page_cache_(page_cache) {}
 
+  //! \brief Add a value with a specified key to the BTree.
   void AddValue(primary_key_t key, std::span<const std::byte> value);
 
+  //! \brief Add a value with an auto-incrementing key to the B-tree.
+  void AddValue(std::span<const std::byte> value);
+
 private:
+  primary_key_t getNextPrimaryKey() const;
+
   BTreeNodeMap newNodePage(BTreePageType type) const;
 
   std::optional<BTreeNodeMap> loadNodePage(page_number_t page_number) const;
