@@ -35,7 +35,7 @@ include (FetchContent)
 FetchContent_Declare(
         Lightning
         GIT_REPOSITORY https://github.com/nrupprecht/Lightning.git
-        GIT_TAG        1330861
+        GIT_TAG        52418cb
 )
 FetchContent_MakeAvailable(Lightning)
 include_directories(${Lightning_SOURCE_DIR}/include)

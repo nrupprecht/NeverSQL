@@ -9,10 +9,7 @@ intended for production use.
 
 ## Structure
 
-The most basic layer is the data access layer, which is responsible for reading and writing data to persistent memory. 
-This is managed by the DataAccessLayer class. The DataAccessLayer class manages memory pages, and provides an interface
-to request pages, free previously requested pages, and write pages back to persistent memory after applications have 
-modified the page data.
+See [Architecture.md](Architecture.md) for a high-level overview of the architecture.
 
 ## Other tools
 

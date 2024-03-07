@@ -18,15 +18,13 @@ void SetupLogger(Severity min_severity = Severity::Info);
 int main() {
   SetupLogger(Severity::Info);
 
-  // 7000003
-
   // ---> Your database path here.
   std::filesystem::path database_path =
       "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-dmgr-test.db";
 
-  std::filesystem::remove(database_path);
+  // std::filesystem::remove(database_path);
 
-  primary_key_t num_to_insert = 1'000'000;  // 6'311;
+  primary_key_t num_to_insert = 100'000'000;
 
   neversql::DataManager manager(database_path);
 
@@ -36,15 +34,16 @@ int main() {
   auto starting_time_point = std::chrono::high_resolution_clock::now();
   auto time_point = starting_time_point;
   std::size_t batch_count = 0;
+  const std::size_t batch_size = 10'000;
   try {
     for (; pk < num_to_insert; ++pk) {
       std::string str = formatting::Format("Brave new world, page {}.", pk);
       manager.AddValue(
           pk, std::span<const std::byte>(reinterpret_cast<const std::byte*>(str.data()), str.size()));
-      if ((pk + 1) % 10'000 == 0) {
+      if ((pk + 1) % batch_size == 0) {
         auto next_time_point = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(next_time_point - time_point);
-        LOG_SEV(Info) << formatting::Format("Inserted {:>9L} values in {:L} ms", pk + 1, duration.count());
+        LOG_SEV(Info) << formatting::Format("Inserted {:>10L} values in {:L} ms", pk + 1, duration.count());
         time_point = next_time_point;
         ++batch_count;
       }
@@ -58,14 +57,17 @@ int main() {
                             .count())
         / static_cast<double>(batch_count);
     LOG_SEV(Major) << formatting::Format(
-        "Finished inserting {:L} values in {:L} batches, average time was {:L} ms",
+        "Finished inserting {:L} values in {:L} batches, average time was {} ms per {:L} values ({} per "
+        "addition).",
         pk,
         batch_count,
-        average_time);
+        average_time,
+        batch_size,
+        average_time / batch_size);
   }
 
   auto total_pages = manager.GetDataAccessLayer().GetNumPages();
-  LOG_SEV(Info) << "Database has " << total_pages << " pages.";
+  LOG_SEV(Major) << lightning::formatting::Format("Database has {:L} pages.", total_pages);
 
   //  for (auto page = 2; page < total_pages; ++page) {
   //    manager.NodeDumpPage(page, std::cout);
@@ -84,8 +86,8 @@ int main() {
   //  manager.HexDumpPage(86, std::cout);
   //  std::cout << std::endl;
   //
-  //  manager.NodeDumpPage(86, std::cout);
-  //  std::cout << std::endl;
+  manager.NodeDumpPage(75722, std::cout);
+  std::cout << std::endl;
 
   auto first_to_probe = num_to_insert / 2;
   auto last_to_probe = std::min(num_to_insert / 2 + 10, num_to_insert);
@@ -94,7 +96,7 @@ int main() {
     if (result.IsFound()) {
       auto& view = result.value_view;
       LOG_SEV(Info) << formatting::Format(
-          "Found key {} on node {}, value: \"{@BYELLOW}{}{@RESET}\".",
+          "Found key {:L} on page {}, value: \"{@BYELLOW}{}{@RESET}\".",
           pk_probe,
           result.search_result.node->GetPageNumber(),
           std::string_view(reinterpret_cast<const char*>(view.data()), view.size()));

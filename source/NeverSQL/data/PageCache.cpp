@@ -189,6 +189,8 @@ bool PageCache::tryReleasePage(std::size_t slot) {
     // We just map the page so we don't introduce any use counts - just in case.
     // NOTE that the page number is not actually set in the page, but we don't need it to be.
     auto page = mapPageFromSlot(slot);
+    // Set the page number, so we can write it back.
+    page->SetPageNumber(page_number);
 
     // TODO(Nate): Again, we might not want to always flush a page back to memory when it is evicted, I am not
     //  sure.

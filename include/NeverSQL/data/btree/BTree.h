@@ -51,9 +51,8 @@ public:
 
   void AddValue(primary_key_t key, std::span<const std::byte> value);
 
-  // private:
-
-  BTreeNodeMap newNodePage(BTreePageType type, bool write_back = true) const;
+private:
+  BTreeNodeMap newNodePage(BTreePageType type) const;
 
   std::optional<BTreeNodeMap> loadNodePage(page_number_t page_number) const;
 

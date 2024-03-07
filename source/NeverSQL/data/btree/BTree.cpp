@@ -44,10 +44,16 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
     LOG_SEV(Trace) << "Not enough free space, node " << result.node->GetPageNumber() << " must be split.";
 
     splitNode(*result.node, result, StoreData {.key = key, .serialized_value = value});
+
+    // Sanity check.
+    auto&& header = result.node->GetHeader();
+    NOSQL_ASSERT(!header.IsPointersPage() || header.additional_data != 0,
+                 "page " << result.node->GetPageNumber()
+                         << " is a pointers page with no additional data, there must be a right pointer");
   }
 }
 
-BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, bool write_back) const {
+BTreeNodeMap BTreeManager::newNodePage(BTreePageType type) const {
   BTreeNodeMap node_map(page_cache_->GetNewPage());
 
   // TODO: These modifications need to go in the WAL.
@@ -62,19 +68,24 @@ BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, bool write_back) cons
   header.reserved_start = node_map.GetPageSize();
   header.free_end = header.reserved_start;
 
-  // Write the node back to the file.
-  if (write_back) {
-    writeBack(node_map);
-  }
   return node_map;
 }
 
 std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number) const {
   BTreeNodeMap node(page_cache_->GetPage(page_number));
+
+  auto&& header = node.GetHeader();
+
   // Make sure the magic number is correct. This is an assert, because if it's not correct, something is
   // very wrong with the database itself.
-  NOSQL_ASSERT(node.GetHeader().magic_number == ToUInt64("NOSQLBTR"),
-               "invalid magic number in page " << page_number);
+  NOSQL_ASSERT(header.magic_number == ToUInt64("NOSQLBTR"), "invalid magic number in page " << page_number);
+  // Another sanity check.
+  NOSQL_ASSERT(header.page_number == page_number,
+               "page number mismatch, expected " << page_number << ", got " << header.page_number);
+  NOSQL_ASSERT(
+      !header.IsPointersPage() || header.additional_data != 0,
+      "page " << page_number << " is a pointers page with no additional data, there must be a right pointer");
+
   return node;
 }
 
@@ -194,9 +205,6 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
     node_map.sortKeys();
   }
 
-  // TODO: Don't always write back pages immediately?
-  writeBack(node_map);
-
   return true;
 }
 
@@ -234,9 +242,10 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
 
     splitNode(*parent, result, entry_to_add);
   }
-  else {
-    writeBack(*parent);
-  }
+
+  NOSQL_ASSERT(!parent->IsPointersPage() || parent->GetHeader().additional_data != 0,
+               "page " << parent_page_number
+                       << " is a pointers page with no additional data, there must be a right pointer");
 }
 
 SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreData> data) {
@@ -250,6 +259,10 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   // We can use this function to split leaf or interior nodes.
   auto new_node = newNodePage(node.GetType());
+
+  if (new_node.GetPageNumber() == 345) {
+    std::cout << "";
+  }
 
   SplitPage return_data {.left_page = new_node.GetPageNumber(), .right_page = node.GetPageNumber()};
 
@@ -267,7 +280,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
     // the split value in the parent.
     auto pointers_cell = std::get<PointersNodeCell>(
         node.getCell(pointers[static_cast<unsigned long>(num_elements_to_move - 1)]));
-    header.additional_data = pointers_cell.page_number;
+    new_node.GetHeader().additional_data = pointers_cell.page_number;
 
     return_data.split_key = pointers_cell.key;
   }
@@ -341,6 +354,19 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   LOG_SEV(Trace) << "  * After split, new node has " << new_node.GetDefragmentedFreeSpace()
                  << " bytes of de-fragmented free space.";
 
+  {
+    auto&& check_header = node.GetHeader();
+    NOSQL_ASSERT(!check_header.IsPointersPage() || check_header.additional_data != 0,
+                 "page " << node.GetPageNumber()
+                         << " is a pointers page with no additional data, there must be a right pointer");
+  }
+  {
+    auto&& check_header = new_node.GetHeader();
+    NOSQL_ASSERT(!check_header.IsPointersPage() || check_header.additional_data != 0,
+                 "page " << new_node.GetPageNumber()
+                         << " is a pointers page with no additional data, there must be a right pointer");
+  }
+
   return return_data;
 }
 
@@ -356,8 +382,8 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   BTreePageType child_type = root->IsPointersPage() ? BTreePageType::Internal : BTreePageType::Leaf;
 
   // We will write back these nodes below.
-  auto left_child = newNodePage(child_type, false);
-  auto right_child = newNodePage(child_type, false);
+  auto left_child = newNodePage(child_type);
+  auto right_child = newNodePage(child_type);
   auto left_page_number = left_child.GetPageNumber();
   auto right_page_number = right_child.GetPageNumber();
 
