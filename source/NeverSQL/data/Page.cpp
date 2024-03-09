@@ -9,34 +9,38 @@
 namespace neversql {
 
 // =================================================================================================
-// PageCounter.
+//  RCPage.
 // =================================================================================================
 
-PageCounter::PageCounter(std::optional<page_number_t> page_number, class PageCache* owning_cache) noexcept
-    : page_number(page_number)
-    , owning_cache(owning_cache) {}
-
-PageCounter::~PageCounter() {
-  if (owning_cache && page_number) {
-    owning_cache->ReleasePage(*page_number);
-  }
-}
-
-// =================================================================================================
-// RCPage.
-// =================================================================================================
-
-RCPage::RCPage(page_number_t page_number, page_size_t page_size, class PageCache* owning_cache) noexcept
-    : Page(page_number, page_size)
-    , counter_(std::make_shared<PageCounter>(page_number, owning_cache)) {}
+RCPage::RCPage(page_number_t page_number,
+               transaction_t transaction_number,
+               page_size_t page_size,
+               uint32_t descriptor_index,
+               PageCache* owning_cache) noexcept
+    : Page(page_number, transaction_number, page_size)
+    , owning_cache_(owning_cache)
+    , descriptor_index_(descriptor_index) {}
 
 RCPage::RCPage(page_size_t page_size, class PageCache* owning_cache) noexcept
     : Page(page_size)
-    , counter_(std::make_shared<PageCounter>(std::nullopt, owning_cache)) {}
+    , owning_cache_(owning_cache) {}
 
-void RCPage::setPageNumber(page_number_t page_number) {
-  page_number_ = page_number;
-  counter_->page_number = page_number;
+RCPage::~RCPage() {
+  if (owning_cache_) {
+    owning_cache_->ReleasePage(page_number_);
+  }
+}
+
+page_size_t RCPage::WriteToPage(page_size_t offset, std::span<const std::byte> data) {
+  // TODO: Actual WAL
+
+  NOSQL_REQUIRE(offset + data.size() <= page_size_,
+                "WriteToPage: offset + data.size() is greater than page size");
+
+  owning_cache_->SetDirty(descriptor_index_);
+
+  std::memcpy(data_ + offset, data.data(), data.size());
+  return static_cast<page_size_t>(offset + data.size());
 }
 
 }  // namespace neversql

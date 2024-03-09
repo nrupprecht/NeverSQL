@@ -32,6 +32,13 @@ using page_size_t = uint16_t;
 //! \brief The data type to use to represent the size of an entry in a page.
 using entry_size_t = uint32_t;
 
+//! \brief The data type used to represent a transaction ID.
+using transaction_t = uint64_t;
+
+//! \brief The data type used to represent an LSN (log sequence number).
+using sequence_number_t = uint64_t;
+
+
 //! \brief Convert a c-string of length at most 8 to a uint64_t.
 inline uint64_t ToUInt64(const char* str) {
   NOSQL_REQUIRE(std::strlen(str) <= sizeof(uint64_t), "string too long");

@@ -64,7 +64,7 @@ void DataAccessLayer::WriteBackPage(const Page& page) const {
   fout.write(page.GetChars(), static_cast<std::streamsize>(page.GetPageSize()));
 }
 
-void DataAccessLayer::ReleasePage(Page page) {
+void DataAccessLayer::ReleasePage(const Page& page) {
   releasePage(page.GetPageNumber());
 }
 
@@ -139,7 +139,7 @@ void DataAccessLayer::readPage(Page& page, bool safe_mode) const {
   }
   std::ifstream fin(file_path_, std::ios::binary);
   fin.seekg(static_cast<std::streamoff>(page.GetPageNumber() * GetPageSize()));
-  fin.read(page.GetChars(), static_cast<std::streamsize>(GetPageSize()));
+  fin.read(page.getChars(), static_cast<std::streamsize>(GetPageSize()));
 }
 
 void DataAccessLayer::createDB() {
@@ -152,7 +152,7 @@ void DataAccessLayer::createDB() {
   meta_.free_list_page_ = free_list_page;
 
   // Write the meta to page 0.
-  FreestandingPage freestanding_page(0, GetPageSize());
+  FreestandingPage freestanding_page(0, /* transaction_number= */ 0, GetPageSize());
   GetPage(0 /* meta page */, freestanding_page);
 
   serialize(freestanding_page, meta_);
@@ -172,7 +172,7 @@ void DataAccessLayer::openDB() {
   NOSQL_REQUIRE(std::filesystem::exists(file_path_), "file '" << file_path_ << "' not exist");
 
   // Open the meta page and store it. The meta page is always page 0.
-  FreestandingPage freestanding_page(0, GetPageSize());
+  FreestandingPage freestanding_page(0, /* transaction_number= */ 0, GetPageSize());
   getPage(0, freestanding_page, false);
   // Deserialize the meta page, in the freestanding_page, into the meta structure.
   deserialize(freestanding_page, meta_);
@@ -197,7 +197,8 @@ void DataAccessLayer::initialize() {
 }
 
 void DataAccessLayer::updateMeta() const {
-  FreestandingPage meta_page(0, GetPageSize());
+  // TODO: This needs to interact with the WAL.
+  FreestandingPage meta_page(0, /* transaction_number= */ 0, GetPageSize());
   serialize(meta_page, meta_);
   writePage(meta_page);
 }
@@ -214,8 +215,8 @@ void DataAccessLayer::updateFreeList() const {
   }
 
   try {
-    // Get the free list page.
-    FreestandingPage free_list_page(meta_.free_list_page_, GetPageSize());
+    // Get the free list page. TODO: This needs to interact with the WAL.
+    FreestandingPage free_list_page(meta_.free_list_page_, /* transaction_number= */ 0, GetPageSize());
     // Serialize the free list into the page.
     serialize(free_list_page, free_list_);
     // Write the page back to storage.
@@ -230,14 +231,10 @@ void DataAccessLayer::serialize(Page& page, const FreeList& free_list) {
   // TODO: Check that there is enough space left in the meta page.
   // TODO: Allow the free list to be written to multiple pages?
 
-  // TODO: This needs to interact with the WAL.
-
-  auto* buffer = page.GetChars();
-
-  write(buffer, free_list.next_page_number_);
-  write(buffer, free_list.freed_pages_.size());
+  auto offset = page.WriteToPage(0, free_list.next_page_number_);
+  offset = page.WriteToPage(offset, free_list.freed_pages_.size());
   for (auto page_number : free_list.freed_pages_) {
-    write(buffer, page_number);
+    offset = page.WriteToPage(offset, page_number);
   }
 }
 
@@ -255,12 +252,10 @@ void DataAccessLayer::deserialize(const Page& page, FreeList& free_list) {
 }
 
 void DataAccessLayer::serialize(Page& page, const Meta& meta) {
-  auto* buffer = page.GetChars();
-
-  write(buffer, Meta::meta_magic_number_);
-  write(buffer, meta.page_size_power_);
-  write(buffer, meta.free_list_page_);
-  write(buffer, meta.index_page_);
+  auto offset = page.WriteToPage(0, Meta::meta_magic_number_);
+  offset = page.WriteToPage(offset, meta.page_size_power_);
+  offset = page.WriteToPage(offset, meta.free_list_page_);
+  page.WriteToPage(offset, meta.index_page_);
 }
 
 void DataAccessLayer::deserialize(const Page& page, Meta& meta) {

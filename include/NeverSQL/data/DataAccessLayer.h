@@ -41,7 +41,7 @@ public:
   void WriteBackPage(const Page& page) const;
 
   //! \brief Release a page back to the DAL.
-  void ReleasePage(Page page);
+  void ReleasePage(const Page& page);
 
   //! \brief Get the number of pages in the DAL.
   NO_DISCARD page_number_t GetNumPages() const;

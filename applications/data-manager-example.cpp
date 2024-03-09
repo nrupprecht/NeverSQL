@@ -28,13 +28,13 @@ int main() {
 
   neversql::DataManager manager(database_path);
 
-  LOG_SEV(Info) << "Database has " << manager.GetDataAccessLayer().GetNumPages() << " pages.";
+  LOG_SEV(Info) << lightning::formatting::Format("Database has {:L} pages.",  manager.GetDataAccessLayer().GetNumPages());
 
   primary_key_t pk = 0;
   auto starting_time_point = std::chrono::high_resolution_clock::now();
   auto time_point = starting_time_point;
   std::size_t batch_count = 0;
-  const std::size_t batch_size = 10'000;
+  const std::size_t batch_size = 100'000;
   try {
     for (; pk < num_to_insert; ++pk) {
       std::string str = formatting::Format("Brave new world, page {}.", pk);

@@ -58,7 +58,7 @@ public:
 private:
   primary_key_t getNextPrimaryKey() const;
 
-  BTreeNodeMap newNodePage(BTreePageType type) const;
+  BTreeNodeMap newNodePage(BTreePageType type, page_size_t reserved_space) const;
 
   std::optional<BTreeNodeMap> loadNodePage(page_number_t page_number) const;
 
@@ -66,6 +66,7 @@ private:
   //!
   //! TODO: Better way to add value?
   //! TODO: Keys that aren't primary_key_t.
+  //!
   //! \param node_map
   //! \param key
   //! \param serialized_value
@@ -108,9 +109,6 @@ private:
   //! \brief Special case for splitting the root node, which causes the height of the tree to increase by one.
   void splitRoot(std::optional<StoreData> data);
 
-  //! \brief Write the node back to the file.
-  void writeBack(const BTreeNodeMap& node_map) const;
-
   //! \brief Vacuums the node, removing any fragmented space.
   void vacuum(BTreeNodeMap& node) const;
 
@@ -128,9 +126,6 @@ private:
   //!
   //! This information comes from the DAL.
   page_number_t index_page_ {};
-
-  // TODO: Track auto-incrementing primary keys. Have to serialize this somewhere. Possibly, we add reserved
-  //  space in the root node for this.
 
   //! \brief The maximum entry size, in bytes, before an overflow page is needed
   page_size_t max_entry_size_ = 256;

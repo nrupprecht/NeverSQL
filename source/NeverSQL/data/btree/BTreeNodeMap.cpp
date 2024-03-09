@@ -7,16 +7,13 @@
 
 namespace neversql {
 
-BTreePageHeader& BTreeNodeMap::GetHeader() {
-  return *reinterpret_cast<BTreePageHeader*>(page_->GetData());
-}
-
-const BTreePageHeader& BTreeNodeMap::GetHeader() const {
-  return *reinterpret_cast<const BTreePageHeader*>(page_->GetData());
+BTreePageHeader BTreeNodeMap::GetHeader() {
+  // TODO: Remove. All modifications need to go through logging.
+  return BTreePageHeader(page_.get());
 }
 
 BTreePageType BTreeNodeMap::GetType() const {
-  return GetHeader().GetPageType();
+  return getHeader().GetPageType();
 }
 
 page_number_t BTreeNodeMap::GetPageNumber() const {
@@ -36,11 +33,11 @@ NO_DISCARD Page& BTreeNodeMap::GetPage() {
 }
 
 page_size_t BTreeNodeMap::GetNumPointers() const {
-  return GetHeader().GetNumPointers();
+  return getHeader().GetNumPointers();
 }
 
 page_size_t BTreeNodeMap::GetDefragmentedFreeSpace() const {
-  return GetHeader().GetDefragmentedFreeSpace();
+  return getHeader().GetDefragmentedFreeSpace();
 }
 
 std::optional<primary_key_t> BTreeNodeMap::GetLargestKey() const {
@@ -51,15 +48,19 @@ std::optional<primary_key_t> BTreeNodeMap::GetLargestKey() const {
 }
 
 bool BTreeNodeMap::IsPointersPage() const noexcept {
-  return GetHeader().IsPointersPage();
+  return getHeader().IsPointersPage();
 }
 
 bool BTreeNodeMap::IsRootPage() const noexcept {
-  return GetHeader().IsRootPage();
+  return getHeader().IsRootPage();
 }
 
 BTreeNodeMap::BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept
     : page_(std::move(page)) {}
+
+BTreePageHeader BTreeNodeMap::getHeader() const {
+  return BTreePageHeader(page_.get());
+}
 
 std::optional<page_size_t> BTreeNodeMap::getCellByPK(primary_key_t key) const {
   std::span<const page_size_t> pointers = getPointers();
@@ -90,10 +91,10 @@ std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(primary_key_t key
 }
 
 page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) const {
-  NOSQL_REQUIRE(GetHeader().IsPointersPage(), "cannot get next page from a page that is not a pointers page");
+  NOSQL_REQUIRE(getHeader().IsPointersPage(), "cannot get next page from a page that is not a pointers page");
 
   if (GetNumPointers() == 0) {
-    auto next_page = GetHeader().additional_data;
+    auto next_page = getHeader().GetAdditionalData();
     NOSQL_ASSERT(next_page != 0, "next page cannot be the 0 page");
     return next_page;
   }
@@ -101,8 +102,7 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
   auto num_pointers = GetNumPointers();
   auto last_cell = std::get<PointersNodeCell>(getNthCell(num_pointers - 1));
   if (last_cell.key < key) {
-    auto&& header = GetHeader();
-    auto next_page = header.additional_data;
+    auto next_page = getHeader().GetAdditionalData();
     NOSQL_ASSERT(next_page != 0,
                  "rightmost pointer in page " << GetPageNumber() << " set to 0, error in rightmost pointer");
     return next_page;
@@ -112,28 +112,20 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
   NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << key);
   // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
   // number.
-  return *reinterpret_cast<const page_number_t*>(page_->GetPtr(*offset + sizeof(primary_key_t)));
-}
-
-std::span<page_size_t> BTreeNodeMap::getPointers() {
-  auto&& header = GetHeader();
-  auto start_ptrs = header.GetPointersStart();
-  auto num_pointers = header.GetNumPointers();
-  return std::span(page_->GetPtr<page_size_t>(start_ptrs), num_pointers);
+  return page_->Read<primary_key_t>(*offset + sizeof(primary_key_t));
 }
 
 std::span<const page_size_t> BTreeNodeMap::getPointers() const {
-  auto&& header = GetHeader();
+  auto&& header = getHeader();
   auto start_ptrs = header.GetPointersStart();
   auto num_pointers = header.GetNumPointers();
-  return std::span(page_->GetPtr<const page_size_t>(start_ptrs), num_pointers);
+
+  return page_->GetSpan<const page_size_t>(start_ptrs, num_pointers);
 }
 
 primary_key_t BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
   // Copy so we don't have to worry about alignment.
-  primary_key_t pk;
-  std::memcpy(&pk, page_->GetPtr(cell_offset), sizeof(primary_key_t));
-  return pk;
+  return page_->Read<primary_key_t>(cell_offset);
 }
 
 primary_key_t BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
@@ -143,16 +135,15 @@ primary_key_t BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
-  auto&& header = GetHeader();
-  if (header.IsPointersPage()) {
+  if (getHeader().IsPointersPage()) {
     return PointersNodeCell {
         getKeyForCell(cell_offset),
-        *reinterpret_cast<const page_number_t*>(page_->GetPtr(cell_offset + sizeof(primary_key_t)))};
+                             page_->Read<page_number_t>(cell_offset + sizeof(primary_key_t))};
   }
   return DataNodeCell {
       getKeyForCell(cell_offset),
-      page_->CopyAs<entry_size_t>(cell_offset + sizeof(primary_key_t)),
-      page_->GetPtr(cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t))};
+                       page_->Read<entry_size_t>(cell_offset + sizeof(primary_key_t)),
+                       page_->GetData() + cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t)};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {
@@ -163,8 +154,13 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_
 
 void BTreeNodeMap::sortKeys() {
   auto pointers = getPointers();
-  std::ranges::sort(pointers,
+
+  std::vector<page_size_t> data{pointers.begin(), pointers.end()};
+
+  std::ranges::sort(data,
                     [this](auto&& ptr1, auto&& ptr2) { return getKeyForCell(ptr1) < getKeyForCell(ptr2); });
+  std::span<page_size_t> sorted_ptrs{data.data(), data.size()};
+  GetPage().WriteToPage(getHeader().GetPointersStart(), sorted_ptrs);
 }
 
 }  // namespace neversql

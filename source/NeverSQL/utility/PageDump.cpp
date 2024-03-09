@@ -96,20 +96,22 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   }
 
   // Get the node header.
-  auto&& header = node.GetHeader();
+  auto header = node.getHeader();
 
-  std::string_view sv {reinterpret_cast<const char*>(&header.magic_number), sizeof(header.magic_number)};
-  out << lightning::formatting::Format("|  {:<20}\"{@BRED}{}{@RESET}\"\n", "Magic number:", std::string(sv));
+  // TODO: Make and use Format function that formats numbers as chars.
+  auto magic_number = header.GetMagicNumber();
+  std::string_view sv {reinterpret_cast<const char*>(&magic_number), sizeof(magic_number)};
+  out << lightning::formatting::Format("|  {:<20}\"{@BRED}{}{@RESET}\"\n", "Magic number:", sv);
 
-  FormatBinary(buffer, header.flags);
+  FormatBinary(buffer, header.GetFlags());
   out << lightning::formatting::Format("|  {:<20}{@BBLUE}{}{@RESET}\n", "Flags:", buffer.MoveString());
   buffer.Clear();
 
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.free_start);
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free end:", header.free_end);
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.reserved_start);
-  out << lightning::formatting::Format("|  {:<20}{@BGREEN}{}{@RESET}\n", "Page number:", header.page_number);
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Additional data:", header.additional_data);
+  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.GetFreeStart());
+  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free end:", header.GetFreeEnd());
+  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.GetReservedStart());
+  out << lightning::formatting::Format("|  {:<20}{@BGREEN}{}{@RESET}\n", "Page number:", header.GetPageNumber());
+  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Additional data:", header.GetAdditionalData());
 
   {
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');

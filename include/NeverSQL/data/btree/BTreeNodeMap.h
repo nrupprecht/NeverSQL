@@ -39,6 +39,7 @@ struct PointersNodeCell {
   NO_DISCARD page_size_t GetSize() const noexcept { return sizeof(primary_key_t) + sizeof(page_number_t); }
 };
 
+
 namespace utility {
 class PageInspector;
 }  // namespace utility
@@ -53,10 +54,7 @@ class BTreeNodeMap {
 
 public:
   //! \brief Get the header of the page.
-  NO_DISCARD BTreePageHeader& GetHeader();
-
-    //! \brief Get the header of the page.
-  NO_DISCARD const BTreePageHeader& GetHeader() const;
+  NO_DISCARD BTreePageHeader GetHeader();
 
   //! \brief Get the type of this node.
   NO_DISCARD BTreePageType GetType() const;
@@ -95,6 +93,9 @@ private:
   //! \brief Create a new BTreeNodeMap wrapping a page. No checks are done to see if the page is a valid B-tree node.
   explicit BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept;
 
+  //! \brief Get the header of the page.
+  NO_DISCARD BTreePageHeader getHeader() const;
+
   //! \brief Get an offset to the start of an entry, indicated by its primary key, in a leaf node.
   //!
   //! If the key cannot be found, returns std::nullopt. The the offsets are assumed to be ordered by the
@@ -116,9 +117,6 @@ private:
   //! \brief If this is a pointers page, get the next page to search on. If this is not a pointers page,
   //! raises and error.
   page_number_t searchForNextPageInPointersPage(primary_key_t key) const;
-
-  //! \brief Get a span of the offsets in the node.
-  std::span<page_size_t> getPointers();
 
   //! \brief Get a span of the offsets in the node.
   std::span<const page_size_t> getPointers() const;

@@ -33,10 +33,12 @@ public:
   void ReleasePage(page_number_t page_number);
 
   //! \brief Flush a page to the disk.
-  //! TODO(Nate): I am using this to transition towards using the page cache. I am not sure if it will be
-  //!     allowed in the final version, at least as a public member.
+  //! TODO(Nate): I am using this to transition towards using the page cache. I am not sure if it will be allowed in
+  //!     the final version, at least as a public member.
   void FlushPage(const Page& page);
 
+  //! \brief Indicates that data has been written to the page in a particular slot.
+  void SetDirty(std::size_t slot);
 private:
   //! \brief A description of the page that is in a particular slot in the cache.
   struct PageDescriptor {
@@ -108,6 +110,7 @@ private:
   //! \param page_number The page number of the page being stored.
   void initializePage(std::size_t page_slot, page_number_t page_number);
 
+  //! \brief Decrement the usage count of a page in a particular slot.
   void decrementUsage(std::size_t slot);
 
   //! \brief Try to release a page from a particular slot.

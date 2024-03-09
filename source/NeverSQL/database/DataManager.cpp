@@ -19,15 +19,14 @@ DataManager::DataManager(const std::filesystem::path& database_path)
   if (meta.GetIndexPage() == 0) {
     // For now, we only support one index, a primary key index. So just set up this page as the root page for
     // the index B-tree.
-    auto root_page = primary_index_.newNodePage(BTreePageType::RootLeaf);
+    // Allocate reserved space in which to fit the auto incrementing primary key.
+    auto root_page =
+        primary_index_.newNodePage(BTreePageType::RootLeaf, /*reserved_space=*/sizeof(primary_key_t));
+
     LOG_SEV(Trace) << "Root page allocated to be page " << root_page.GetPageNumber() << ".";
 
-    // Allocate space to keep track of the next primary key.
-    root_page.GetHeader().free_end -= sizeof(primary_key_t);
-    root_page.GetHeader().reserved_start -= sizeof(primary_key_t);
     // Write zero into the reserved space.
-    // TODO: WAL.
-    *reinterpret_cast<primary_key_t*>(root_page.GetPage().GetPtr(root_page.GetHeader().reserved_start)) = 0;
+    root_page.GetPage().WriteToPage<primary_key_t>(root_page.GetHeader().GetReservedStart(), 0);
 
     data_access_layer_.setIndexPage(root_page.GetPageNumber());
     primary_index_.index_page_ = root_page.GetPageNumber();

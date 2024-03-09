@@ -75,6 +75,10 @@ void PageCache::FlushPage(const Page& page) {
   data_access_layer_->WriteBackPage(page);
 }
 
+void PageCache::SetDirty(std::size_t slot) {
+  page_descriptors_[slot].SetIsDirty(true);
+}
+
 std::size_t PageCache::getSlot() {
   LOG_SEV(Debug) << "Acquiring cache slot.";
 
@@ -118,9 +122,6 @@ std::unique_ptr<Page> PageCache::getPageFromSlot(std::size_t slot) {
 
   // Increment usage.
   ++descriptor.usage_count;
-  // TODO: This is not right, but I don't have a better way right now, since anyone can just write to the
-  //  page.
-  descriptor.SetIsDirty(true);
   descriptor.SetSecondChance(true);
 
   LOG_SEV(Trace) << "Returning page " << descriptor.page_number << " from slot " << slot
