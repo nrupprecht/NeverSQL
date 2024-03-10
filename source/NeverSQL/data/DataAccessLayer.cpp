@@ -28,8 +28,9 @@ void read(const char*& buffer, T& data) {
 // DataAccessLayer
 // =================================================================================================
 
-DataAccessLayer::DataAccessLayer(std::filesystem::path file_path)
-    : file_path_(std::move(file_path)) {
+DataAccessLayer::DataAccessLayer(std::filesystem::path db_path)
+    : db_path_(db_path)
+    , file_path_(db_path / "neversql.db") {
   initialize();
 }
 
@@ -184,6 +185,10 @@ void DataAccessLayer::openDB() {
 }
 
 void DataAccessLayer::initialize() {
+  if (!std::filesystem::exists(db_path_)) {
+    std::filesystem::create_directories(db_path_);
+  }
+
   if (!std::filesystem::exists(file_path_)) {
     {  // "Touch" the file.
       std::ofstream fout(file_path_, std::ios::binary | std::ios::out);

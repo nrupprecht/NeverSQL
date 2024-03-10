@@ -19,10 +19,10 @@ int main() {
   SetupLogger(Severity::Info);
 
   // ---> Your database path here.
-  std::filesystem::path database_path =
-      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-dmgr-test.db";
+  std::filesystem::path database_path = "path-to-your-directory";
 
-  // std::filesystem::remove(database_path);
+
+  // std::filesystem::remove_all(database_path);
 
   primary_key_t num_to_insert = 100'000'000;
 

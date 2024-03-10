@@ -6,8 +6,11 @@
 
 namespace neversql {
 
-PageCache::PageCache(std::size_t cache_size, DataAccessLayer* data_access_layer)
-    : page_descriptors_(cache_size)
+PageCache::PageCache(const std::filesystem::path& wal_directory,
+                     std::size_t cache_size,
+                     DataAccessLayer* data_access_layer)
+    : wal_(wal_directory)
+    , page_descriptors_(cache_size)
     , data_access_layer_(data_access_layer)
     , cache_size_(cache_size)
     , cache_free_list_(cache_size, false) {
@@ -105,7 +108,7 @@ std::unique_ptr<Page> PageCache::mapPageFromSlot(std::size_t slot) {
                 "slot is out of range, tried to map slot " << slot << " from cache of size " << cache_size_);
 
   auto* page_start_ptr = page_cache_.get() + slot * data_access_layer_->GetPageSize();
-  auto page = std::make_unique<RCPage>(data_access_layer_->GetPageSize(), this);
+  auto page = std::make_unique<RCPage>(data_access_layer_->GetPageSize(), slot, this);
   page->SetData(page_start_ptr);
 
   return page;
@@ -141,9 +144,6 @@ void PageCache::initializePage(std::size_t page_slot, page_number_t page_number)
 
   // Set up the page descriptor.
   auto& descriptor = page_descriptors_[page_slot];
-  // TODO: This is not right, but I don't have a better way right now, since anyone can just write to the
-  //  page.
-  descriptor.SetIsDirty(true);
   descriptor.SetValid(true);
   descriptor.page_number = page_number;
   descriptor.usage_count = 0;
@@ -193,8 +193,6 @@ bool PageCache::tryReleasePage(std::size_t slot) {
     // Set the page number, so we can write it back.
     page->SetPageNumber(page_number);
 
-    // TODO(Nate): Again, we might not want to always flush a page back to memory when it is evicted, I am not
-    //  sure.
     if (descriptor.IsDirty()) {
       FlushPage(*page);
     }

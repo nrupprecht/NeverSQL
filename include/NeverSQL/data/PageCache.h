@@ -9,6 +9,7 @@
 
 #include "NeverSQL/data/DataAccessLayer.h"
 #include "NeverSQL/data/FreeList.h"
+#include "NeverSQL/recovery/WriteAheadLog.h"
 
 namespace neversql {
 
@@ -18,7 +19,9 @@ class PageCache {
 public:
   //! \brief Construct a new page cache with a prescribed cache size operating over a particular data access
   //! layer.
-  PageCache(std::size_t cache_size, DataAccessLayer* data_access_layer);
+  PageCache(const std::filesystem::path& wal_directory,
+            std::size_t cache_size,
+            DataAccessLayer* data_access_layer);
 
   //! \brief Write back all uncommitted pages to the disk.
   ~PageCache();
@@ -39,6 +42,10 @@ public:
 
   //! \brief Indicates that data has been written to the page in a particular slot.
   void SetDirty(std::size_t slot);
+
+  //! \brief Get the write ahead log.
+  WriteAheadLog& GetWAL() { return wal_; }
+
 private:
   //! \brief A description of the page that is in a particular slot in the cache.
   struct PageDescriptor {
@@ -118,6 +125,13 @@ private:
 
   //! \brief Choose the next "victim" to evict from the cache and release it from the page cache.
   std::size_t evictNextVictim();
+
+  // =================================================================================================
+  //  Private members.
+  // =================================================================================================
+
+  //! \brief The write ahead logging manager.
+  WriteAheadLog wal_;
 
   //! \brief Map from page numbers of pages in the cache to their slot in the cache.
   std::unordered_map<page_number_t, std::size_t> page_number_to_slot_;

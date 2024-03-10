@@ -185,7 +185,7 @@ public:
          class PageCache* owning_cache) noexcept;
 
   //! \brief Create a placeholder page that has not yet been mapped to a page in the database.
-  RCPage(page_size_t page_size, class PageCache* owning_cache) noexcept;
+  RCPage(page_size_t page_size, uint32_t descriptor_index, class PageCache* owning_cache) noexcept;
 
   //! \brief Release the page.
   ~RCPage();

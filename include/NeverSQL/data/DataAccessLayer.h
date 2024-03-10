@@ -26,7 +26,7 @@ class DataAccessLayer {
 
 public:
   //! \brief Create or open a database file located at the given path.
-  explicit DataAccessLayer(std::filesystem::path file_path);
+  explicit DataAccessLayer(std::filesystem::path db_path);
 
   //! \brief Destructor, makes sure data is written back to file.
   ~DataAccessLayer();
@@ -120,6 +120,9 @@ private:
 
   //! \brief A read/write lock, for synchronizing access to the file.
   mutable std::shared_mutex read_write_lock_;
+
+  //! \brief The file path to the database directory.
+  std::filesystem::path db_path_ {};
 
   //! \brief The file path to the database file.
   std::filesystem::path file_path_ {};

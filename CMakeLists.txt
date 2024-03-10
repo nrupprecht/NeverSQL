@@ -53,6 +53,7 @@ add_library(
     source/NeverSQL/utility/HexDump.cpp
     source/NeverSQL/utility/PageDump.cpp
     source/NeverSQL/utility/DisplayTable.cpp
+    source/NeverSQL/recovery/WriteAheadLog.cpp
 )
 add_library(NeverSQL::NeverSQL ALIAS NeverSQL_NeverSQL)
 

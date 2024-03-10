@@ -10,7 +10,7 @@ namespace neversql {
 
 DataManager::DataManager(const std::filesystem::path& database_path)
     : data_access_layer_(database_path)
-    , page_cache_(16 /* Just a random number for now */, &data_access_layer_)
+    , page_cache_(database_path / "walfiles", 16 /* Just a random number for now */, &data_access_layer_)
     , primary_index_(&page_cache_) {
   // TODO: Make the meta page more independent from the database.
 
