@@ -5,6 +5,7 @@
 #pragma once
 
 #include <span>
+#include <filesystem>
 
 #include "NeverSQL/utility/Defines.h"
 
