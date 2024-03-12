@@ -11,7 +11,7 @@
 
 namespace neversql {
 
-enum class RecordType {
+enum class RecordType : std::uint8_t {
   UPDATE,
   ABORT,
   COMMIT,

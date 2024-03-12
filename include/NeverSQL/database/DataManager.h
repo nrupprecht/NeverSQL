@@ -6,6 +6,7 @@
 
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTree.h"
+#include "NeverSQL/data/Document.h"
 #include "NeverSQL/utility/HexDump.h"
 
 namespace neversql {
@@ -30,6 +31,9 @@ public:
 
   //! \brief Add a value to the database using an auto incrementing key.
   void AddValue(std::span<const std::byte> value);
+
+  //! \brief Add a document to the database.
+  void AddValue(const DocumentBuilder& document);
 
   //! \brief Get a search result for a given key.
   SearchResult Search(primary_key_t key) const;

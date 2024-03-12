@@ -28,7 +28,8 @@ int main() {
 
   neversql::DataManager manager(database_path);
 
-  LOG_SEV(Info) << lightning::formatting::Format("Database has {:L} pages.",  manager.GetDataAccessLayer().GetNumPages());
+  LOG_SEV(Info) << lightning::formatting::Format("Database has {:L} pages.",
+                                                 manager.GetDataAccessLayer().GetNumPages());
 
   primary_key_t pk = 0;
   auto starting_time_point = std::chrono::high_resolution_clock::now();
@@ -37,9 +38,14 @@ int main() {
   const std::size_t batch_size = 100'000;
   try {
     for (; pk < num_to_insert; ++pk) {
-      std::string str = formatting::Format("Brave new world, page {}.", pk);
-      manager.AddValue(
-          std::span<const std::byte>(reinterpret_cast<const std::byte*>(str.data()), str.size()));
+      // Create a document.
+      neversql::DocumentBuilder builder;
+      builder.AddEntry("data", formatting::Format("Brave new world.\nEntry number {}.", pk));
+      builder.AddEntry("pk", static_cast<int>(pk));
+      builder.AddEntry("is_even", pk % 2 == 0);
+      // Add the document.
+      manager.AddValue(builder);
+
       if ((pk + 1) % batch_size == 0) {
         auto next_time_point = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(next_time_point - time_point);
@@ -52,12 +58,13 @@ int main() {
     LOG_SEV(Error) << "Caught exception when trying to add entry with pk " << pk << ":" << ex;
   }
   if (0 < batch_count) {
-    auto average_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::high_resolution_clock::now() - starting_time_point)
-                            .count())
+    auto average_time =
+        static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::high_resolution_clock::now() - starting_time_point)
+                                .count())
         / static_cast<double>(batch_count);
     LOG_SEV(Major) << formatting::Format(
-        "Finished inserting {:L} values in {:L} batches, average time was {} ms per {:L} values ({} per "
+        "Finished inserting {:L} values in {:L} batches, average time was {} ms per {:L} values ({} ms per "
         "addition).",
         pk,
         batch_count,
@@ -80,11 +87,16 @@ int main() {
     auto result = manager.Retrieve(pk_probe);
     if (result.IsFound()) {
       auto& view = result.value_view;
+
+      // Interpret the data as a document.
+      neversql::DocumentReader reader(view);
+
       LOG_SEV(Info) << formatting::Format(
-          "Found key {:L} on page {}, value: \"{@BYELLOW}{}{@RESET}\".",
+          "Found key {:L} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",
           pk_probe,
           result.search_result.node->GetPageNumber(),
-          std::string_view(reinterpret_cast<const char*>(view.data()), view.size()));
+          result.search_result.GetSearchDepth(),
+          neversql::PrettyPrint(reader));
     }
     else {
       LOG_SEV(Info) << formatting::Format("{@BRED}Key {} was not found.{@RESET}", pk_probe);
@@ -106,27 +118,5 @@ void SetupLogger(Severity min_severity) {
                                             formatting::FileLineAttributeFormatter {},
                                             formatting::SeverityAttributeFormatter {false},
                                             formatting::MSG);
-
-  //  formatting::FormatterBySeverity formatter;
-  //  {
-  //    auto default_fmt = MakeMsgFormatter("[{}] [{}] {}",
-  //                                        formatting::DateTimeAttributeFormatter {},
-  //                                        formatting::SeverityAttributeFormatter {false},
-  //                                        formatting::MSG);
-  //    // Formatter for "low levels" of severity displace file and line number.
-  //    auto verbose_formatter = MakeMsgFormatter("[{}] [{}:{}] [{}] {}",
-  //                                              formatting::DateTimeAttributeFormatter {},
-  //                                              formatting::FileNameAttributeFormatter {true},
-  //                                              formatting::FileLineAttributeFormatter {},
-  //                                              formatting::SeverityAttributeFormatter {false},
-  //                                              formatting::MSG);
-  //
-  //    formatter
-  //        // Set formatter for Trace and Debug severities.
-  //        .SetFormatterForSeverity(LoggingSeverity <= Severity::Debug || LoggingSeverity > Severity::Major,
-  //                                 *verbose_formatter)
-  //        // Set formatter for all other severities (including records without severities).
-  //        .SetDefaultFormatter(std::move(default_fmt));
-  //  }
   Global::GetCore()->SetAllFormatters(verbose_formatter);
 }

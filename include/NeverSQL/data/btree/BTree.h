@@ -22,6 +22,9 @@ namespace neversql {
 struct SearchResult {
   FixedStack<page_number_t> path;
   std::optional<BTreeNodeMap> node {};
+
+  //! \brief Get how many layers had to be searched to find the node.
+  std::size_t GetSearchDepth() const noexcept { return path.Size(); }
 };
 
 //! \brief Convenient structure for packing up data to store in a B-tree.

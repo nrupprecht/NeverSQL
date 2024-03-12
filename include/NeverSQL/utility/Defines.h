@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>  // std::byte
 
 #include <Lightning/Lightning.h>
 
@@ -38,7 +39,6 @@ using transaction_t = uint64_t;
 //! \brief The data type used to represent an LSN (log sequence number).
 using sequence_number_t = uint64_t;
 
-
 //! \brief Convert a c-string of length at most 8 to a uint64_t.
 inline uint64_t ToUInt64(const char* str) {
   NOSQL_REQUIRE(std::strlen(str) <= sizeof(uint64_t), "string too long");
@@ -55,19 +55,37 @@ inline void format_logstream(const exception& ex, lightning::RefBundle& handler)
   using namespace lightning;
   using namespace lightning::formatting;
 
-  handler << NewLineIndent
-          << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red)
-          << AnsiColorSegment(AnsiForegroundColor::Yellow); // Exception in yellow.
-  const char* begin = ex.what(), *end = ex.what();
+  handler << NewLineIndent << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red)
+          << AnsiColorSegment(AnsiForegroundColor::Yellow);  // Exception in yellow.
+  const char *begin = ex.what(), *end = ex.what();
   while (*end) {
-    for (; *end && *end != '\n'; ++end); // Find next newline.
+    for (; *end && *end != '\n'; ++end)
+      ;  // Find next newline.
     handler << NewLineIndent << string_view(begin, static_cast<string_view::size_type>(end - begin));
-    for (; *end && *end == '\n'; ++end); // Pass any number of newlines.
+    for (; *end && *end == '\n'; ++end)
+      ;  // Pass any number of newlines.
     begin = end;
   }
-  handler << AnsiResetSegment
-          << NewLineIndent // Reset colors to default.
+  handler << AnsiResetSegment << NewLineIndent  // Reset colors to default.
           << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red);
 }
 
-} // namespace std
+template<typename T>
+auto operator<=>(std::span<T> lhs, std::span<T> rhs) {
+  auto min_size = std::min(lhs.size(), rhs.size());
+  for (typename std::span<T>::size_type i = 0; i < min_size; ++i) {
+    auto cmp = lhs[i] <=> rhs[i];
+    if (cmp != std::strong_ordering::equivalent) {
+      return cmp;
+    }
+  }
+  if (lhs.size() < rhs.size()) {
+    return std::strong_ordering::less;
+  }
+  if (lhs.size() > rhs.size()) {
+    return std::strong_ordering::greater;
+  }
+  return std::strong_ordering::equivalent;
+}
+
+}  // namespace std

@@ -58,7 +58,9 @@ Some useful resources on databases and database implementations:
     * btree: https://www.postgresql.org/docs/current/btree-behavior.html
     * Data layout: https://www.postgresql.org/docs/current/storage-page-layout.html
   * ["The Internals of Postgres"](https://www.interdb.jp/pg/index.html)
-* BSON spec: https://bsonspec.org/, https://bsonspec.org/spec.html
+* Mongodb
+  * https://github.com/mongodb/mongo
+  * BSON spec: https://bsonspec.org/, https://bsonspec.org/spec.html
 * Other tutorials / similar projects
   * https://cstack.github.io/db_tutorial/
   * https://adambcomer.com/blog/simple-database/motivation-design/

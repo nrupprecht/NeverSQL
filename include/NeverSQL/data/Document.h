@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <span>
 #include <string>
 
 #include "NeverSQL/utility/DataTypes.h"
@@ -11,68 +12,89 @@
 namespace neversql {
 
 //! \brief A representation of a document, which is a collection of keys and typed data fields.
-class Document {
- private:
+class DocumentBuilder {
+private:
   struct Field {
     std::string name;
-    std::size_t data_start;
     DataTypeEnum type;
+    std::variant<int, double, bool, std::string> data;
   };
 
- public:
-  explicit Document(primary_key_t pk) noexcept : primary_key(pk) {}
+  std::vector<Field> fields_;
 
-  primary_key_t primary_key;
-  std::vector<Field> fields;
-  std::vector<unsigned char> compressed_data;
+  friend void WriteToBuffer(lightning::memory::BasicMemoryBuffer<std::byte>& buffer,
+                            const DocumentBuilder& document);
 
-  NO_DISCARD std::size_t GetNumFields() const { return fields.size(); }
+public:
+  DocumentBuilder() = default;
 
-  template <typename T>
+  //! \brief Get the number of fields in the document.
+  NO_DISCARD std::size_t GetNumFields() const { return fields_.size(); }
+
+  //! \brief Calculate the amount of memory required to store the document.
+  std::size_t CalculateRequiredSize() const;
+
+  template<typename T>
   void AddEntry(const std::string& name, T&& data) {
-    auto type = GetDataTypeEnum<T>();
-    NOSQL_ASSERT(type != DataTypeEnum::DBDocument,
-                 "cannot add a document to a document right now");
-
-    // Add the data.
-    std::size_t data_start;
-    if constexpr (std::is_same_v<T, Document>) {
-      // Add the primary key.
-      data_start = addBytes(std::forward<T>(data.primary_key));
-    }
-    else {
-      data_start = addBytes(std::forward<T>(data));
-    }
-    // Add field descriptor.
-    fields.push_back({.name = name, .data_start = data_start, .type = type});
+    fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<T>(), .data = std::forward<T>(data)});
   }
 
-  template <typename T>
-  NO_DISCARD T GetEntryAs(const std::string& name) const {
-    auto it = std::ranges::find_if(
-        fields, [&name](const auto& field) { return field.name == name; });
-
-    NOSQL_ASSERT(it != fields.end(), "field not found");
+  template<typename T>
+  NO_DISCARD const T& GetEntryAs(const std::string& name) const {
+    auto it = std::ranges::find_if(fields_, [&name](const auto& field) { return field.name == name; });
+    NOSQL_ASSERT(it != fields_.end(), "field '" << name << "' not found");
     NOSQL_ASSERT(it->type == GetDataTypeEnum<T>(), "type mismatch");
-
-    if constexpr (std::is_trivially_copyable_v<T>) {
-      T value;
-      std::memcpy(&value, compressed_data.data() + it->data_start, sizeof(T));
-      return value;
-    }
-    else {
-      NOSQL_FAIL("unhandled type");
-    }
-  }
-
- private:
-  template <typename T>
-  std::size_t addBytes(T&& data) {
-    auto current_size = compressed_data.size();
-    compressed_data.resize(current_size + sizeof(T));
-    std::memcpy(compressed_data.data() + current_size, &data, sizeof(T));
-    return current_size;
+    return std::get<T>(it->data);
   }
 };
+
+class DocumentReader {
+public:
+  explicit DocumentReader(std::span<const std::byte> buffer);
+
+  std::size_t GetNumFields() const;
+
+  std::string_view GetFieldName(std::size_t index) const;
+
+  DataTypeEnum GetFieldType(std::size_t index) const;
+
+  template<typename T>
+  NO_DISCARD T GetEntryAs(std::size_t index) const {
+    NOSQL_REQUIRE(index < fields_.size(), "index " << index << " out of range");
+    NOSQL_REQUIRE(fields_[index].type == GetDataTypeEnum<T>(), "type mismatch");
+    if constexpr (!std::is_same_v<T, std::string>) {
+      T out;
+      std::memcpy(&out, fields_[index].data.data(), sizeof(T));
+      return out;
+    }
+    else {
+      return std::string(reinterpret_cast<const char*>(fields_[index].data.data()),
+                         fields_[index].data.size());
+    }
+  }
+
+private:
+  //! \brief Scan the data and initialize the field descriptors.
+  void initialize();
+
+  struct FieldDescriptor {
+    std::string_view field_name;
+    DataTypeEnum type;
+    std::span<const std::byte> data;
+  };
+
+  const std::span<const std::byte> buffer_;
+
+  std::vector<FieldDescriptor> fields_;
+};
+
+//! \brief Serialize a document to a memory buffer.
+void WriteToBuffer(lightning::memory::BasicMemoryBuffer<std::byte>& buffer, const DocumentBuilder& document);
+
+//! \brief Pretty print the contents of a document to a stream.
+void PrettyPrint(const DocumentReader& reader, std::ostream& out);
+
+//! \brief Pretty print the contents of a document to a string.
+std::string PrettyPrint(const DocumentReader& reader);
 
 }  // namespace neversql

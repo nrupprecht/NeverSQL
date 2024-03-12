@@ -35,7 +35,7 @@ include (FetchContent)
 FetchContent_Declare(
         Lightning
         GIT_REPOSITORY https://github.com/nrupprecht/Lightning.git
-        GIT_TAG        52418cb
+        GIT_TAG        c254ecc
 )
 FetchContent_MakeAvailable(Lightning)
 include_directories(${Lightning_SOURCE_DIR}/include)
@@ -44,6 +44,7 @@ add_library(
     NeverSQL_NeverSQL
     # Source files.
     source/NeverSQL/data/DataAccessLayer.cpp
+    source/NeverSQL/data/Document.cpp
     source/NeverSQL/data/FreeList.cpp
     source/NeverSQL/data/Page.cpp
     source/NeverSQL/data/PageCache.cpp

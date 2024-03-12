@@ -45,6 +45,18 @@ void DataManager::AddValue(std::span<const std::byte> value) {
   primary_index_.AddValue(value);
 }
 
+void DataManager::AddValue(const DocumentBuilder& document) {
+  // Serialize the document and add it to the database.
+  // TODO: Deal with documents that are too long.
+  //  NOTE: This is not the best way to do this, I just want to get something that works.
+  [[maybe_unused]] auto size = document.CalculateRequiredSize();
+  lightning::memory::MemoryBuffer<std::byte> buffer;
+
+  WriteToBuffer(buffer, document);
+  std::span<const std::byte> value(buffer.Data(), buffer.Size());
+  AddValue(value);
+}
+
 SearchResult DataManager::Search(primary_key_t key) const {
   return primary_index_.search(key);
 }
