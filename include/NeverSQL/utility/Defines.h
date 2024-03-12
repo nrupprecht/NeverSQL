@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstddef>  // std::byte
+#include <span>
 
 #include <Lightning/Lightning.h>
 
@@ -57,7 +58,8 @@ inline void format_logstream(const exception& ex, lightning::RefBundle& handler)
 
   handler << NewLineIndent << AnsiColor8Bit(R"(""")", AnsiForegroundColor::Red)
           << AnsiColorSegment(AnsiForegroundColor::Yellow);  // Exception in yellow.
-  const char *begin = ex.what(), *end = ex.what();
+  const char *begin = ex.what();
+  const char *end = ex.what();
   while (*end) {
     for (; *end && *end != '\n'; ++end)
       ;  // Find next newline.
@@ -71,21 +73,21 @@ inline void format_logstream(const exception& ex, lightning::RefBundle& handler)
 }
 
 template<typename T>
-auto operator<=>(std::span<T> lhs, std::span<T> rhs) {
-  auto min_size = std::min(lhs.size(), rhs.size());
-  for (typename std::span<T>::size_type i = 0; i < min_size; ++i) {
+strong_ordering CompareSpanValues(span<T> lhs, span<T> rhs) {
+  auto min_size = min(lhs.size(), rhs.size());
+  for (typename span<T>::size_type i = 0; i < min_size; ++i) {
     auto cmp = lhs[i] <=> rhs[i];
-    if (cmp != std::strong_ordering::equivalent) {
+    if (cmp != strong_ordering::equivalent) {
       return cmp;
     }
   }
   if (lhs.size() < rhs.size()) {
-    return std::strong_ordering::less;
+    return strong_ordering::less;
   }
   if (lhs.size() > rhs.size()) {
-    return std::strong_ordering::greater;
+    return strong_ordering::greater;
   }
-  return std::strong_ordering::equivalent;
+  return strong_ordering::equivalent;
 }
 
 }  // namespace std
