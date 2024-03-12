@@ -47,7 +47,7 @@ TEST(Document, Basic) {
 
   std::ostringstream stream;
   neversql::PrettyPrint(reader, stream);
-  EXPECT_EQ(stream.str(), "Age: 42\nBirthday: My business\nIsAlive: true\n");
+  EXPECT_EQ(stream.str(), "Age: 42\nBirthday: \"My business\"\nIsAlive: true\n");
 }
 
 TEST(Document, Strings) {
