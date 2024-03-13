@@ -13,6 +13,7 @@
 #include "NeverSQL/containers/FixedStack.h"
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
+#include "NeverSQL/data/internals/KeyComparison.h"
 
 namespace neversql {
 
@@ -29,9 +30,17 @@ struct SearchResult {
 
 //! \brief Convenient structure for packing up data to store in a B-tree.
 struct StoreData {
-  primary_key_t key;
-  std::span<const std::byte> serialized_value;
+  //! \brief The key is some collection of bytes. It is context dependent how to compare different keys.
+  GeneralKey key {};
 
+  //! \brief The payload of the store operation.
+  std::span<const std::byte> serialized_value {};
+
+  //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed size
+  //! that is known by the B-tree manager.
+  bool serialize_key_size = false;
+
+  //! \brief Whether to serialize the size of the data.
   bool serialize_data_size = true;
 };
 
@@ -39,7 +48,10 @@ struct StoreData {
 struct SplitPage {
   page_number_t left_page {};
   page_number_t right_page {};
-  primary_key_t split_key {};
+
+  lightning::memory::MemoryBuffer<std::byte> split_key {};
+
+  void SetKey(GeneralKey key) { split_key.Append(key); }
 };
 
 //! \brief An object that manages a B-tree structure for the NeverSQL database.
@@ -49,13 +61,16 @@ class BTreeManager {
   friend class DataManager;
 
 public:
-  explicit BTreeManager(PageCache* page_cache) noexcept
-      : page_cache_(page_cache) {}
+  explicit BTreeManager(PageCache* page_cache) noexcept;
 
   //! \brief Add a value with a specified key to the BTree.
-  void AddValue(primary_key_t key, std::span<const std::byte> value);
+  void AddValue(GeneralKey key, std::span<const std::byte> value);
 
   //! \brief Add a value with an auto-incrementing key to the B-tree.
+  //!
+  //! Only works if the B-tree is configured to generate auto-incrementing keys.
+  //!
+  //! \param value The value payload to add to the B-tree.
   void AddValue(std::span<const std::byte> value);
 
 private:
@@ -67,40 +82,10 @@ private:
 
   //! \brief Add an element to the node. Returns false if there is not enough space to add the element.
   //!
-  //! TODO: Better way to add value?
-  //! TODO: Keys that aren't primary_key_t.
-  //!
-  //! \param node_map
-  //! \param key
-  //! \param serialized_value
-  //! \param store_size Whether the size of the serialized value needs to be stored in the node. This will be
-  //!     true for leaf nodes, but false for internal nodes.
+  //! \param node_map The node to which the data should be added.
+  //! \param data The data to add to the node, and some information about how to represent the data.
   //! \param unique_keys Whether the keys in the node must be unique. This will generally be true.
   bool addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys = true) const;
-
-  //! \brief Adaptor function that allows adding a trivially copyable type to the node by creating a span of
-  //! the value and calling the other addElementToNode function.
-  template<typename T>
-    requires std::is_trivially_copyable_v<T>
-  bool addElementToNode(BTreeNodeMap& node_map,
-                        primary_key_t key,
-                        const T& value,
-                        bool store_size = true,
-                        bool unique_keys = true) const {
-    if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
-      return addElementToNode(
-          node_map,
-          StoreData {.key = key, .serialized_value = value, .serialize_data_size = store_size},
-          unique_keys);
-    }
-    else {
-      auto data_span = std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(value));
-      return addElementToNode(
-          node_map,
-          StoreData {.key = key, .serialized_value = data_span, .serialize_data_size = store_size},
-          unique_keys);
-    }
-  }
 
   //! \brief Split a node. This may, recursively, lead to more splits if the split causes the parent node to
   //! be full.
@@ -116,7 +101,20 @@ private:
   void vacuum(BTreeNodeMap& node) const;
 
   //! \brief Look for the leaf node where a key should be inserted or can be found.
-  SearchResult search(primary_key_t key) const;
+  SearchResult search(GeneralKey key) const;
+
+  //! \brief Checks if the key is less than or equal to the other key.
+  //!
+  //! Uses the lt comparison provided, uses std::ranges::equal to check if the keys are equal.
+  bool lte(GeneralKey key1, GeneralKey key2) const;
+
+  //! \brief Debug function that returns a string representation of a key.
+  //!
+  //! Uses the debug_key_func_ if it is available, otherwise, string-ize the bytes.
+  //!
+  //! \param key
+  //! \return string representation of the key, implementation defined.
+  std::string debugKey(GeneralKey key) const;
 
   // =================================================================================================
   // Private member variables.
@@ -124,6 +122,19 @@ private:
 
   //! \brief Pointer to the NeverSQL database's data access layer.
   PageCache* page_cache_ {};
+
+  //! \brief Whether the key's size needs to be serialized. TODO: Get this from the key type.
+  bool serialize_key_size_ = false;
+
+  //! \brief Function for comparing keys.
+  CmpFunc cmp_;
+
+  //! \brief Optionally, a function that can serialize a key to a string for debugging purposes.
+  DebugKeyFunc debug_key_func_;
+
+  // TODO: Enum to identify the key type.
+
+  // TODO: Function for comparing keys.
 
   //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
   //!

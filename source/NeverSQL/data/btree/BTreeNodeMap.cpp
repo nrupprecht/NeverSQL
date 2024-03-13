@@ -40,7 +40,7 @@ page_size_t BTreeNodeMap::GetDefragmentedFreeSpace() const {
   return getHeader().GetDefragmentedFreeSpace();
 }
 
-std::optional<primary_key_t> BTreeNodeMap::GetLargestKey() const {
+std::optional<GeneralKey> BTreeNodeMap::GetLargestKey() const {
   if (auto&& pointers = getPointers(); !pointers.empty()) {
     return getKeyForCell(pointers.back());
   }
@@ -62,35 +62,36 @@ BTreePageHeader BTreeNodeMap::getHeader() const {
   return BTreePageHeader(page_.get());
 }
 
-std::optional<page_size_t> BTreeNodeMap::getCellByPK(primary_key_t key) const {
+std::optional<page_size_t> BTreeNodeMap::getCellByKey(GeneralKey key) const {
   std::span<const page_size_t> pointers = getPointers();
 
-  auto it = std::ranges::lower_bound(pointers, key, [this](auto&& ptr, decltype(key) k) {
-    return getKeyForCell(static_cast<page_size_t>(ptr)) < k;
+  // Note: there was an issue trying to point in the span directly as the second argument, so I am using a placeholder
+  // value (0) and just using the compare function directly, ignoring its second argument (0).
+  auto it = std::ranges::lower_bound(pointers, 0 /* unused */, [this, key](page_size_t ptr, [[maybe_unused]] int) {
+    return cmp_(getKeyForCell(ptr), key);
   });
   if (it == pointers.end()) {
     return std::nullopt;
   }
-  if (getKeyForCell(*it) == key) {
+  auto cell_key = getKeyForCell(*it);
+  // Crude way to check if the keys are equal without forcing a separate == function to be defined.
+  if (!cmp_(cell_key, key) && !cmp_(key, cell_key)) {
     return *it;
   }
   return {};
 }
 
-std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(primary_key_t key) const {
+std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(GeneralKey key) const {
   std::span<const page_size_t> pointers = getPointers();
   auto it = std::ranges::lower_bound(
-      pointers,
-      key,
-      std::ranges::less{},
-      [this](auto&& ptr) { return getKeyForCell(ptr); });
+      pointers, key, cmp_, [this](auto&& ptr) { return getKeyForCell(ptr); });
   if (it == pointers.end()) {
     return {};
   }
   return *it;
 }
 
-page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) const {
+page_number_t BTreeNodeMap::searchForNextPageInPointersPage(GeneralKey key) const {
   NOSQL_REQUIRE(getHeader().IsPointersPage(), "cannot get next page from a page that is not a pointers page");
 
   if (GetNumPointers() == 0) {
@@ -101,7 +102,7 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
 
   auto num_pointers = GetNumPointers();
   auto last_cell = std::get<PointersNodeCell>(getNthCell(num_pointers - 1));
-  if (last_cell.key < key) {
+  if (cmp_(last_cell.key, key)) {
     auto next_page = getHeader().GetAdditionalData();
     NOSQL_ASSERT(next_page != 0,
                  "rightmost pointer in page " << GetPageNumber() << " set to 0, error in rightmost pointer");
@@ -109,7 +110,7 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(primary_key_t key) c
   }
   // Get the offset to the first key that is greater
   auto offset = getCellLowerBoundByPK(key);
-  NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << key);
+  NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << debugKey(key));
   // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
   // number.
   return page_->Read<primary_key_t>(*offset + sizeof(primary_key_t));
@@ -123,27 +124,34 @@ std::span<const page_size_t> BTreeNodeMap::getPointers() const {
   return page_->GetSpan<const page_size_t>(start_ptrs, num_pointers);
 }
 
-primary_key_t BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
-  // Copy so we don't have to worry about alignment.
-  return page_->Read<primary_key_t>(cell_offset);
+GeneralKey BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
+  if (getHeader().AreKeySizesSpecified()) {
+    auto key_size = page_->Read<uint16_t>(cell_offset);
+    return page_->GetSpan(cell_offset + sizeof(uint16_t), key_size);
+  }
+  // TODO: For now at least, assume that keys whose size are not specified are uint64_t. This can be relaxed
+  //  later.
+  return page_->GetSpan(cell_offset, sizeof(primary_key_t));
 }
 
-primary_key_t BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
+GeneralKey BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
   auto&& pointers = getPointers();
   NOSQL_ASSERT(cell_index < pointers.size(), "cell number " << cell_index << " is out of range");
   return getKeyForCell(pointers[cell_index]);
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
+  auto key_size_is_serialized = getHeader().AreKeySizesSpecified();
   if (getHeader().IsPointersPage()) {
-    return PointersNodeCell {
-        getKeyForCell(cell_offset),
-                             page_->Read<page_number_t>(cell_offset + sizeof(primary_key_t))};
+    return PointersNodeCell {.key = getKeyForCell(cell_offset),
+                             .page_number = page_->Read<page_number_t>(cell_offset + sizeof(primary_key_t)),
+                             .key_size_is_serialized = key_size_is_serialized};
   }
   return DataNodeCell {
-      getKeyForCell(cell_offset),
-                       page_->Read<entry_size_t>(cell_offset + sizeof(primary_key_t)),
-                       page_->GetData() + cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t)};
+      .key = getKeyForCell(cell_offset),
+      .size_of_entry = page_->Read<entry_size_t>(cell_offset + sizeof(primary_key_t)),
+      .start_of_value = page_->GetData() + cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t),
+      .key_size_is_serialized = key_size_is_serialized};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {
@@ -155,12 +163,20 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_
 void BTreeNodeMap::sortKeys() {
   auto pointers = getPointers();
 
-  std::vector<page_size_t> data{pointers.begin(), pointers.end()};
+  std::vector<page_size_t> data {pointers.begin(), pointers.end()};
 
-  std::ranges::sort(data,
-                    [this](auto&& ptr1, auto&& ptr2) { return getKeyForCell(ptr1) < getKeyForCell(ptr2); });
-  std::span<page_size_t> sorted_ptrs{data.data(), data.size()};
+  std::ranges::sort(
+      data, [this](auto&& ptr1, auto&& ptr2) { return cmp_(getKeyForCell(ptr1), getKeyForCell(ptr2)); });
+  std::span<page_size_t> sorted_ptrs {data.data(), data.size()};
   GetPage().WriteToPage(getHeader().GetPointersStart(), sorted_ptrs);
+}
+
+std::string BTreeNodeMap::debugKey(GeneralKey key) const {
+  if (debug_key_func_) {
+    return debug_key_func_(key);
+  }
+  // Hex dump the key.
+  return internal::HexDumpBytes(key);
 }
 
 }  // namespace neversql

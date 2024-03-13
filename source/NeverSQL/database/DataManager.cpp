@@ -5,6 +5,7 @@
 #include "NeverSQL/database/DataManager.h"
 // Other files.
 #include "NeverSQL/utility/PageDump.h"
+#include "NeverSQL/data/internals/Utility.h"
 
 namespace neversql {
 
@@ -38,7 +39,8 @@ DataManager::DataManager(const std::filesystem::path& database_path)
 }
 
 void DataManager::AddValue(primary_key_t key, std::span<const std::byte> value) {
-  primary_index_.AddValue(key, value);
+  GeneralKey key_span = internal::SpanValue(key);
+  primary_index_.AddValue(key_span, value);
 }
 
 void DataManager::AddValue(std::span<const std::byte> value) {
@@ -58,13 +60,15 @@ void DataManager::AddValue(const DocumentBuilder& document) {
 }
 
 SearchResult DataManager::Search(primary_key_t key) const {
-  return primary_index_.search(key);
+  GeneralKey key_span = internal::SpanValue(key);
+  return primary_index_.search(key_span);
 }
 
 RetrievalResult DataManager::Retrieve(primary_key_t key) const {
+  GeneralKey key_span = internal::SpanValue(key);
   RetrievalResult result {.search_result = Search(key)};
   if (result.search_result.node) {
-    if (auto offset = *result.search_result.node->getCellByPK(key)) {
+    if (auto offset = *result.search_result.node->getCellByKey(key_span)) {
       result.cell_offset = offset;
       result.value_view = std::get<DataNodeCell>(result.search_result.node->getCell(offset)).SpanValue();
     }

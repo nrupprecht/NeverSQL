@@ -1,10 +1,22 @@
+//
+// Create by Nathaniel Rupprecht
+//
+
 #include "NeverSQL/data/btree/BTree.h"
 // Other files.
+#include "NeverSQL/data/internals/KeyComparison.h"
+#include "NeverSQL/data/internals/KeyPrinting.h"
+#include "NeverSQL/data/internals/Utility.h"
 
 namespace neversql {
 
-void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value) {
-  LOG_SEV(Debug) << "Adding value with key " << key << " to the B-tree.";
+BTreeManager::BTreeManager(PageCache* page_cache) noexcept
+    : page_cache_(page_cache)
+    , cmp_(internal::CompareTrivial<primary_key_t>)
+    , debug_key_func_(internal::PrintUInt64) {}
+
+void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
+  LOG_SEV(Debug) << "Adding value with key " << debugKey(key) << " to the B-tree.";
 
   // Search for the leaf node where the key should be inserted.
   auto result = search(key);
@@ -35,10 +47,13 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
   if (necessary_space <= space_available && num_elements + 1 <= max_entries_per_page_) {
     // TODO: Return expected type, or some more detailed info, generally, this will fail b/c of key
     //  uniqueness violations.
-    NOSQL_ASSERT(
-        addElementToNode(*result.node, key, value),
-                 "could not add element to node " << result.node->GetPageNumber() << " with pk " << key
-                                                  << ", but this should be possible");
+    StoreData store_data {.key = key,
+                          .serialized_value = value,
+                          .serialize_key_size = serialize_key_size_,
+                          .serialize_data_size = true};
+    NOSQL_ASSERT(addElementToNode(*result.node, store_data),
+                 "could not add element to node " << result.node->GetPageNumber() << " with pk "
+                                                  << debugKey(key) << ", but this should be possible");
   }
   else {
     // Else, we have to split the node and re-balance the tree.
@@ -55,12 +70,16 @@ void BTreeManager::AddValue(primary_key_t key, std::span<const std::byte> value)
 }
 
 void BTreeManager::AddValue(std::span<const std::byte> value) {
+  // TODO: Check whether this tree supports auto-incrementing keys.
+
   LOG_SEV(Debug) << "Adding value to the B-tree with auto-incrementing key.";
 
   // Get the next primary key.
   auto next_key = getNextPrimaryKey();
+  GeneralKey key_span(reinterpret_cast<const std::byte*>(&next_key), sizeof(next_key));
+
   // Add the value with the next primary key.
-  AddValue(next_key, value);
+  AddValue(key_span, value);
 }
 
 primary_key_t BTreeManager::getNextPrimaryKey() const {
@@ -78,13 +97,21 @@ primary_key_t BTreeManager::getNextPrimaryKey() const {
 }
 
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, page_size_t reserved_space) const {
-  BTreeNodeMap node_map(page_cache_->GetNewPage());
-  node_map.GetHeader().InitializePage(node_map.GetPageNumber(), type, reserved_space);
-  return node_map;
+  BTreeNodeMap node(page_cache_->GetNewPage());
+  // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
+  node.cmp_ = cmp_;
+  node.debug_key_func_ = debug_key_func_;
+
+  node.GetHeader().InitializePage(node.GetPageNumber(), type, reserved_space);
+  return node;
 }
 
 std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number) const {
   BTreeNodeMap node(page_cache_->GetPage(page_number));
+
+  // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
+  node.cmp_ = cmp_;
+  node.debug_key_func_ = debug_key_func_;
 
   auto&& header = node.GetHeader();
 
@@ -105,8 +132,8 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
 
 bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) const {
   auto header = node_map.GetHeader();
-  LOG_SEV(Debug) << "Adding element with pk = " << data.key << " to page " << node_map.GetPageNumber()
-                 << ", data size is " << data.serialized_value.size()
+  LOG_SEV(Debug) << "Adding element with pk = " << debugKey(data.key) << " to page "
+                 << node_map.GetPageNumber() << ", data size is " << data.serialized_value.size()
                  << " bytes, unique-keys = " << unique_keys << ".";
 
   // =======================================
@@ -124,9 +151,11 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
     if (auto offset = node_map.getCellLowerBoundByPK(data.key)) {
       // If the key is already in the node, we cannot add it again.
       auto cell = node_map.getCell(*offset);
-      bool found_key = std::visit([data](auto&& cell) { return cell.key == data.key; }, cell);
+      bool found_key =
+          std::visit([data](auto&& cell) { return std::ranges::equal(cell.key, data.key); }, cell);
       if (found_key) {
-        LOG_SEV(Trace) << "Key " << data.key << " already in node on page " << header.GetPageNumber() << ".";
+        LOG_SEV(Trace) << "Key " << debugKey(data.key) << " already in node on page "
+                       << header.GetPageNumber() << ".";
         return false;
       }
     }
@@ -166,14 +195,12 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   // =======================================
 
   // If the page is set up to use fixed primary_key_t length keys, just write the key.
-  if (header.IsUInt64Key()) {
-    offset = page.WriteToPage(offset, data.key);
+  if (header.AreKeySizesSpecified()) {
+    // Write the size of the key, key size is stored as a uint16_t.
+    auto key_size = static_cast<uint16_t>(data.key.size());
+    offset = page.WriteToPage(offset, key_size);
   }
-  // Otherwise, write the size of the key and the key.
-  // TODO: What if the key has a different type? Investigate alternatives later on.
-  else {
-    NOSQL_FAIL("unhandled case, keys must be of type primary_key_t, and pages must use fixed size keys");
-  }
+  offset = page.WriteToPage(offset, data.key);
 
   if (data.serialize_data_size) {
     // Write the size of the value.
@@ -199,7 +226,7 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 
   // Make sure keys are all in ascending order. Only need to do this if the keys are not already sorted
   // (i.e. this was not a rightmost append).
-  if (auto greatest_pk = node_map.GetLargestKey(); greatest_pk && data.key < *greatest_pk) {
+  if (auto greatest_pk = node_map.GetLargestKey(); greatest_pk && cmp_(data.key, *greatest_pk)) {
     node_map.sortKeys();
   }
 
@@ -228,17 +255,16 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
   auto parent = loadNodePage(parent_page_number);
   NOSQL_ASSERT(parent, "could not find parent node");
 
-  if (!addElementToNode(*parent, split_data.split_key, split_data.left_page, false /* DON'T store size */)) {
+  // Create the data store specification.
+  StoreData store_data {.key = split_data.split_key,
+                        .serialized_value = internal::SpanValue(split_data.left_page),
+                        .serialize_key_size = serialize_key_size_,
+                        .serialize_data_size = false};
+
+  if (!addElementToNode(*parent, store_data)) {
     // If there is not enough space to add the new right page to the parent, we have to split the parent.
-
     LOG_SEV(Trace) << "  * Parent node " << parent_page_number << " is full, splitting it.";
-    StoreData entry_to_add {
-        .key = split_data.split_key,
-        .serialized_value = std::span<const std::byte>(
-            reinterpret_cast<const std::byte*>(&split_data.left_page), sizeof(page_number_t)),
-        .serialize_data_size = false};
-
-    splitNode(*parent, result, entry_to_add);
+    splitNode(*parent, result, store_data);
   }
 
   NOSQL_ASSERT(!parent->IsPointersPage() || parent->GetHeader().GetAdditionalData() != 0,
@@ -276,14 +302,14 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
         node.getCell(pointers[static_cast<unsigned long>(num_elements_to_move - 1)]));
     new_node.GetHeader().SetAdditionalData(pointers_cell.page_number);  // TODO: WriteToPage.
 
-    return_data.split_key = pointers_cell.key;
+    return_data.SetKey(pointers_cell.key);
   }
   else {
     auto data_cell =
         std::get<DataNodeCell>(node.getCell(pointers[static_cast<unsigned long>(num_elements_to_move - 1)]));
-    return_data.split_key = data_cell.key;
+    return_data.SetKey(data_cell.key);
   }
-  LOG_SEV(Trace) << "Split key will be " << return_data.split_key << ".";
+  LOG_SEV(Trace) << "Split key will be " << debugKey(return_data.split_key) << ".";
 
   // Move the low nodes to the new node.
   // That way, we can just add the new node with the split key as a single cell to the parent.
@@ -291,16 +317,25 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   // stays the rightmost page, and otherwise, it's cell is still valid.
   for (auto i = 0; i < num_elements_to_move; ++i) {
     auto cell = node.getCell(pointers[static_cast<unsigned long>(i)]);
-    // clang-format off
-    std::visit([&new_node, this](auto&& cell) {
+
+    std::visit(
+        [&new_node, this](auto&& cell) {
           using T = std::decay_t<decltype(cell)>;
-          if constexpr (std::is_same_v<T, PointersNodeCell>)
-            addElementToNode(new_node, cell.key, cell.page_number, false /* DON'T store size */, true);
-          else if constexpr (std::is_same_v<T, DataNodeCell>)
-            addElementToNode(new_node, cell.key, cell.SpanValue(), true /* DO store size */, true);
-          else NOSQL_FAIL("unhandled case");
-        }, cell);
-    // clang-format on
+          StoreData store_data {.key = cell.key, .serialize_key_size = serialize_key_size_};
+          if constexpr (std::is_same_v<T, PointersNodeCell>) {
+            store_data.serialized_value = internal::SpanValue(cell.page_number);
+            store_data.serialize_data_size = false;
+            addElementToNode(new_node, store_data);
+          }
+          else if constexpr (std::is_same_v<T, DataNodeCell>) {
+            store_data.serialized_value = cell.SpanValue();
+            store_data.serialize_data_size = true;
+            addElementToNode(new_node, store_data);
+          }
+          else
+            NOSQL_FAIL("unhandled case");
+        },
+        cell);
   }
 
   // =======================================
@@ -327,15 +362,11 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   // =======================================
 
   if (data) {
-    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << data->key << ".";
-    if (data->key <= return_data.split_key) {
-      // Add to left node.
-      addElementToNode(new_node, data->key, data->serialized_value);
-    }
-    else {
-      // Add to right node.
-      addElementToNode(node, data->key, data->serialized_value);
-    }
+    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << debugKey(data->key) << ".";
+    StoreData store_data {
+        .key = data->key, .serialize_key_size = serialize_key_size_, .serialize_data_size = true};
+    auto& node_to_add_to = lte(data->key, return_data.split_key) ? new_node : node;
+    addElementToNode(node_to_add_to, store_data);
   }
 
   // =======================================
@@ -388,13 +419,15 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   // Put all but one pointer in the left tree.
   page_size_t num_for_left = root->GetNumPointers() - 1;
   auto split_key = root->getKeyForNthCell(num_for_left);
-  LOG_SEV(Trace) << "Split key will be " << split_key << ".";
+  LOG_SEV(Trace) << "Split key will be " << debugKey(split_key) << ".";
 
   for (page_size_t i = 0; i < root->GetNumPointers(); ++i) {
     auto cell = root->getNthCell(i);
     auto& node_to_add_to = i <= num_for_left ? left_child : right_child;
     std::visit(
         [&](auto&& cell) {
+          StoreData store_data {.key = cell.key, .serialize_key_size = serialize_key_size_};
+
           using T = std::decay_t<decltype(cell)>;
           if constexpr (std::is_same_v<T, PointersNodeCell>) {
             if (i == num_for_left) {
@@ -404,16 +437,17 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
                              << node_to_add_to.GetPageNumber() << ") to " << cell.page_number << ".";
             }
             else {
-              NOSQL_ASSERT(
-                  addElementToNode(
-                      node_to_add_to, cell.key, cell.page_number, false /* DON'T store size */, true),
-                  "we should be able to add to this cell");
+              store_data.serialized_value = internal::SpanValue(cell.page_number);
+              store_data.serialize_data_size = false;
+              NOSQL_ASSERT(addElementToNode(node_to_add_to, store_data),
+                           "we should be able to add to this cell");
             }
           }
           else if constexpr (std::is_same_v<T, DataNodeCell>) {
-            NOSQL_ASSERT(
-                addElementToNode(node_to_add_to, cell.key, cell.SpanValue(), true /* DO store size */, true),
-                "we should be able to add to this cell");
+            store_data.serialized_value = cell.SpanValue();
+            store_data.serialize_data_size = true;
+            NOSQL_ASSERT(addElementToNode(node_to_add_to, store_data),
+                         "we should be able to add to this cell");
           }
           else {
             NOSQL_FAIL("unhandled case");
@@ -431,8 +465,8 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
 
   // Add data, if any.
   if (data) {
-    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << data->key << ".";
-    auto& node_to_add_to = data->key <= split_key ? left_child : right_child;
+    LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << debugKey(data->key) << ".";
+    auto& node_to_add_to = lte(data->key, split_key) ? left_child : right_child;
     // Only store the size of the root was NOT a pointers page (meaning we expect data to be stored, not
     // pointers).
     addElementToNode(node_to_add_to, *data, !root->IsPointersPage());
@@ -446,8 +480,12 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   // Set the root page to be a pointers page.
   root_header.SetFlags(root_header.GetFlags() | 0b1);
 
-  // Add the two child pages to the root page.
-  addElementToNode(*root, split_key, left_page_number, false /* DON'T store size */, true);
+  // Add the two child pages to the root page, which is a pointers page (so we don't serialize the data size).
+  StoreData store_data {.key = split_key,
+                        .serialized_value = internal::SpanValue(left_page_number),
+                        .serialize_key_size = serialize_key_size_,
+                        .serialize_data_size = false};
+  addElementToNode(*root, store_data);
   // The right page is the "rightmost" pointer.
   root_header.SetAdditionalData(right_page_number);
   LOG_SEV(Trace) << "Set the rightmost pointer in the root node to " << right_page_number << ".";
@@ -504,7 +542,7 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
                  << node.GetDefragmentedFreeSpace() << " bytes of defragmented free space.";
 }
 
-SearchResult BTreeManager::search(primary_key_t key) const {
+SearchResult BTreeManager::search(GeneralKey key) const {
   SearchResult result;
 
   auto node = [this] {
@@ -532,6 +570,21 @@ SearchResult BTreeManager::search(primary_key_t key) const {
   }
 
   return result;
+}
+
+bool BTreeManager::lte(GeneralKey key1, GeneralKey key2) const {
+  if (cmp_(key1, key2)) {
+    return true;
+  }
+  return std::ranges::equal(key1, key2);
+}
+
+std::string BTreeManager::debugKey(GeneralKey key) const {
+  if (debug_key_func_) {
+    return debug_key_func_(key);
+  }
+  // Hex dump the key.
+  return internal::HexDumpBytes(key);
 }
 
 }  // namespace neversql

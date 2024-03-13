@@ -6,8 +6,9 @@
 // Other files.
 #include <numeric>
 
-#include "NeverSQL/utility/HexDump.h"
+#include "NeverSQL/data/internals/KeyPrinting.h"
 #include "NeverSQL/utility/DisplayTable.h"
+#include "NeverSQL/utility/HexDump.h"
 
 namespace neversql::utility {
 
@@ -19,12 +20,16 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   std::vector<std::size_t> numbers;
   std::vector<page_size_t> offsets;
   std::vector<std::string> cell_types;
-  std::vector<primary_key_t> primary_keys;
+  std::vector<GeneralKey> primary_keys;
   std::vector<entry_size_t> data_size;
   std::vector<std::string> data;
 
   // Now traverse the offsets.
   auto pointers = node.getPointers();
+  auto is_pointers_page = node.getHeader().IsPointersPage();
+  // TODO: Get key type information, correctly read the keys and format them as strings.
+  [[maybe_unused]] auto are_key_size_specified = node.getHeader().AreKeySizesSpecified();
+
   for (std::size_t i = 0; i < pointers.size(); ++i) {
     numbers.push_back(i);
     offsets.push_back(pointers[i]);
@@ -63,7 +68,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   table.AddColumn("Type", cell_types, [](const std::string& type) { return type; }, "BWHITE", "BBLUE");
 
   table.AddColumn(
-      "PK", primary_keys, [](const primary_key_t& pk) { return std::to_string(pk); }, "BLUE", "BBLUE");
+      "PK", primary_keys, [](const GeneralKey& pk) { return internal::HexDumpBytes(pk); }, "BLUE", "BBLUE");
 
   table.AddColumn(
       "Data size",
@@ -75,9 +80,12 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   auto data_col = table.AddColumn(
       "Data",
       data,
-      [](const std::span<const char>& span) {
+      [is_pointers_page](const std::span<const char>& span) {
         std::string_view sv {reinterpret_cast<const char*>(span.data()), span.size()};
-        return std::string(sv);
+        if (is_pointers_page) {
+          return lightning::formatting::Format("{}", sv);
+        }
+        return lightning::formatting::Format("{:?}", sv);
       },
       "BYELLOW",
       "BBLUE");
@@ -112,6 +120,11 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.GetReservedStart());
   out << lightning::formatting::Format("|  {:<20}{@BGREEN}{}{@RESET}\n", "Page number:", header.GetPageNumber());
   out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Additional data:", header.GetAdditionalData());
+
+  out << "|\n|\n";
+  out << "|  Hex dump of header:\n";
+  out << lightning::formatting::Format(
+      "|  {@BYELLOW}{}{@RESET}\n", internal::HexDumpBytes(node.GetPage().GetSpan(0, header.GetPointersStart()), false));
 
   {
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');

@@ -28,7 +28,7 @@ enum class BTreePageType : uint8_t {
 //! P => Pointers page (0 = no, 1 = yes). Leaf nodes and the root node in pointer-mode (when the root has
 //!     children) have this flag set to true.
 //! R => Root node (0 = no, 1 = yes). The root node has this flag set to true.
-//! K => Key type (0 = uint64_t, 1 = variable length)
+//! K => Key sizes specified (0 = no, 1 = yes). The key size is a 16 bit integer.
 //!
 //! The rest of the bits are reserved for future use and denoted by '0's.
 //!
@@ -94,13 +94,13 @@ public:
   //! \brief Check whether this page is the root page.
   NO_DISCARD bool IsRootPage() const noexcept { return (GetFlags() & 0b10) != 0; }
 
+  //! \brief Check whether the key sizes are specified for this BTree.
+  NO_DISCARD bool AreKeySizesSpecified() const noexcept { return (GetFlags() & 0b100) != 0; }
+
   //! \brief Get the type of this page.
   NO_DISCARD BTreePageType GetPageType() const noexcept {
     return static_cast<BTreePageType>(GetFlags() & 0b11);
   }
-
-  //! \brief Check whether the key type for this BTree is a primary_key_t.
-  NO_DISCARD bool IsUInt64Key() const noexcept { return (GetFlags() & 0b100) == 0; }
 
 private:
   explicit BTreePageHeader(Page* page)
