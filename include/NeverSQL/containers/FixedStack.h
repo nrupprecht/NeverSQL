@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <functional>
+#include <concepts>
+
 #include "NeverSQL/utility/Defines.h"
 
 namespace neversql {
@@ -39,7 +42,35 @@ public:
     }
   }
 
-  constexpr T& Top() noexcept { return buffer_[size_ - 1]; }
+  constexpr std::optional<std::reference_wrapper<const T>> Top() const noexcept {
+    return 0 < size_ ? std::optional(std::cref(buffer_[size_ - 1])) : std::nullopt;
+  }
+
+  constexpr std::optional<std::reference_wrapper<T>> Top() noexcept {
+    return 0 < size_ ? std::optional(std::ref(buffer_[size_ - 1])) : std::nullopt;
+  }
+
+  //! \brief Check if two FixedStacks are equal.
+  bool operator==(const FixedStack& other) const noexcept
+    requires std::equality_comparable<T>
+  {
+    if (size_ != other.size_) {
+      return false;
+    }
+    for (std::size_t i = 0; i < size_; ++i) {
+      if (buffer_[i] != other.buffer_[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  //! \brief Check if two FixedStacks are not equal.
+  bool operator!=(const FixedStack& other) const noexcept
+    requires std::equality_comparable<T>
+  {
+    return !(*this == other);
+  }
 
 private:
   T buffer_[StackSize_v];

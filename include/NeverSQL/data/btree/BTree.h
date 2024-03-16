@@ -80,6 +80,39 @@ public:
   //! \brief Get the root page number of the B-tree.
   page_number_t GetRootPageNumber() const noexcept { return root_page_; }
 
+  class Iterator {
+  public:
+    //! \brief Create a begin iterator for the B-tree.
+    explicit Iterator(const BTreeManager& manager);
+
+    //! \brief Create a specific B-tree iterator.
+    Iterator(const BTreeManager& manager, FixedStack<std::pair<page_number_t, page_size_t>> progress);
+
+    //! \brief Create an end B-Tree iterator
+    Iterator(const BTreeManager& manager, [[maybe_unused]] bool);
+
+    Iterator& operator++();
+    std::span<const std::byte> operator*() const;
+    bool operator==(const Iterator& other) const;
+    bool operator!=(const Iterator& other) const;
+
+  private:
+    //! \brief Check if the iterator is at the end.
+    bool done() const noexcept;
+
+    //! \brief Descend to the leftmost node in the tree given the page and pointer cell to start at.
+    void descend(const BTreeNodeMap& page, page_size_t index);
+
+    //! \brief Reference to the B-tree being traversed.
+    const BTreeManager& manager_;
+
+    //! \brief The current progress at every level of the tree.
+    FixedStack<std::pair<page_number_t, page_size_t>> progress_;
+  };
+
+  Iterator begin() const { return Iterator(*this); }
+  Iterator end() const { return Iterator(*this, true); }
+
 private:
   //! \brief Initialize the B-tree manager object from the data in its root page.
   void initialize();

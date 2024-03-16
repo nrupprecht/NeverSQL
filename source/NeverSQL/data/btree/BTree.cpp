@@ -10,6 +10,107 @@
 
 namespace neversql {
 
+// ================================================================================================
+//  BTreeManager::Iterator.
+// ================================================================================================
+
+BTreeManager::Iterator::Iterator(const BTreeManager& manager)
+    : manager_(manager) {
+  auto root = manager_.loadNodePage(manager.GetRootPageNumber());
+  progress_.Push({manager.GetRootPageNumber(), 0});
+  descend(*root, 0);
+}
+
+BTreeManager::Iterator::Iterator(const BTreeManager& manager, FixedStack<std::pair<page_number_t, page_size_t>> progress)
+    : manager_(manager)
+    , progress_(std::move(progress)) {}
+
+//! \brief Create an end B-Tree iterator
+BTreeManager::Iterator::Iterator(const BTreeManager& manager, [[maybe_unused]] bool)
+    : manager_(manager) {}
+
+BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
+  if (done()) {
+    return *this;
+  }
+
+  auto& [current_page_number, current_index] = progress_.Top()->get();
+  auto current_page = *manager_.loadNodePage(current_page_number);
+  current_index++;
+  // There is no more data in the current data page.
+  if (current_index == current_page.GetNumPointers()) {
+    progress_.Pop();
+
+    while (!done()) {
+      auto& [page_number, index] = progress_.Top()->get();
+      auto page = *manager_.loadNodePage(page_number);
+      ++index;
+      // Note: index can be == num pointers, since this means go to the "rightmost page."
+      if (index <= page.GetNumPointers()) {
+        descend(page, index);
+        break;
+      }
+      progress_.Pop();
+    }
+  }
+  return *this;
+}
+
+std::span<const std::byte> BTreeManager::Iterator::operator*() const {
+  if (done()) {
+    return {};
+  }
+
+  auto [page_number, cell_index] = progress_.Top()->get();
+  auto page = *manager_.loadNodePage(page_number);
+  auto cell = page.getNthCell(cell_index);
+  // Should be a data cell.
+  NOSQL_ASSERT(std::holds_alternative<DataNodeCell>(cell), "Cell is not a data cell.");
+  // TODO / NOTE: This is not truly safe in a multi-threaded environment, but it is safe in the context of
+  //  what I have so far.
+  // TODO: This could be solved, though, by the iterator pinning its current page. Then the data would at
+  //  least not be dangling, though if another transaction is modifying the data, the actual data
+  //  referenced by the span might change.
+  return std::get<DataNodeCell>(cell).SpanValue();
+}
+
+bool BTreeManager::Iterator::operator==(const Iterator& other) const {
+  return progress_ == other.progress_ || (done() && other.done());
+}
+
+bool BTreeManager::Iterator::operator!=(const Iterator& other) const { return !(*this == other); }
+
+bool BTreeManager::Iterator::done() const noexcept { return progress_.Empty(); }
+
+void BTreeManager::Iterator::descend(const BTreeNodeMap& page, page_size_t index) {
+  if (!page.IsPointersPage()) {
+    return;
+  }
+
+  // if the index is == num_pointers, go to the "rightmost" page.
+  page_number_t next_page_number {};
+  if (index == page.GetNumPointers()) {
+    next_page_number = page.getHeader().GetAdditionalData();
+  }
+  else {
+    next_page_number = std::get<PointersNodeCell>(page.getNthCell(index)).page_number;
+  }
+
+  auto descending_page = *manager_.loadNodePage(next_page_number);
+  index = 0;
+
+  progress_.Push({next_page_number, index});
+  while (descending_page.IsPointersPage()) {
+    next_page_number = std::get<PointersNodeCell>(descending_page.getNthCell(index)).page_number;
+    descending_page = *manager_.loadNodePage(next_page_number);
+    progress_.Push({next_page_number, index});
+  }
+}
+
+// ================================================================================================
+//  BTreeManager.
+// ================================================================================================
+
 BTreeManager::BTreeManager(page_number_t root_page, PageCache& page_cache)
     : page_cache_(page_cache)
     , root_page_(root_page)
@@ -161,7 +262,7 @@ primary_key_t BTreeManager::getNextPrimaryKey() const {
   auto root = loadNodePage(root_page_);
   primary_key_t pk {};
 
-  auto counter_offset = root->GetHeader().GetReservedStart();
+  auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + 2);
   pk = root->GetPage().Read<primary_key_t>(counter_offset);
 
   primary_key_t next_primary_key = pk + 1;
@@ -325,7 +426,7 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
   result.path.Pop();
 
   // Left page is the original page, right page has to be added to the parent.
-  auto parent_page_number = result.path.Top();
+  auto parent_page_number = *result.path.Top();
   LOG_SEV(Trace) << "  * Adding right page " << split_data.right_page << " to parent page "
                  << parent_page_number << ".";
 
@@ -444,10 +545,8 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   if (data) {
     LOG_SEV(Trace) << "Data requested to be added to a node, pk = " << debugKey(data->key) << ".";
-    StoreData store_data {
-        .key = data->key, .serialize_key_size = serialize_key_size_, .serialize_data_size = true};
     auto& node_to_add_to = lte(data->key, return_data.split_key) ? new_node : node;
-    addElementToNode(node_to_add_to, store_data);
+    addElementToNode(node_to_add_to, *data);
   }
 
   // =======================================
@@ -585,8 +684,7 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
                  << node.GetDefragmentedFreeSpace() << " bytes of defragmented free space.";
 
   // TODO: More WAL friendly version: take a snapshot of the pointers, sort them (without going through the
-  // WAL), then
-  //  submit the sorted changes all at once.
+  //  WAL), then submit the sorted changes all at once.
 
   auto&& header = node.GetHeader();
 

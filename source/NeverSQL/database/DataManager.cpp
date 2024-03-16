@@ -133,6 +133,19 @@ RetrievalResult DataManager::Retrieve(const std::string& collection_name, primar
   return Retrieve(collection_name, key_span);
 }
 
+
+BTreeManager::Iterator DataManager::Begin(const std::string& collection_name) const {
+  auto it = collections_.find(collection_name);
+  auto& manager = *it->second;
+  return manager.begin();
+}
+
+BTreeManager::Iterator DataManager::End(const std::string& collection_name) const {
+  auto it = collections_.find(collection_name);
+  auto& manager = *it->second;
+  return manager.end();
+}
+
 bool DataManager::HexDumpPage(page_number_t page_number,
                               std::ostream& out,
                               utility::HexDumpOptions options) const {

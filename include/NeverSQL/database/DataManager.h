@@ -63,6 +63,13 @@ public:
   RetrievalResult Retrieve(const std::string& collection_name, primary_key_t key) const;
 
   // ========================================
+  // FOR NOW: Test search and iteration methods.
+  // ========================================
+
+  BTreeManager::Iterator Begin(const std::string& collection_name) const;
+  BTreeManager::Iterator End(const std::string& collection_name) const;
+
+  // ========================================
   // Debugging and Diagnostic Functions
   // ========================================
 

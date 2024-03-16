@@ -85,6 +85,14 @@ public:
     }
   }
 
+  template<typename T>
+  NO_DISCARD T GetEntryAs(const std::string& field_name) const {
+    auto it = std::ranges::find_if(
+        fields_, [&field_name](const auto& field) { return field.field_name == field_name; });
+    NOSQL_REQUIRE(it != fields_.end(), "field '" << field_name << "' not found");
+    return GetEntryAs<T>(std::distance(fields_.begin(), it));
+  }
+
 private:
   //! \brief Scan the data and initialize the field descriptors.
   void initialize();

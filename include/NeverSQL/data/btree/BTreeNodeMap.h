@@ -40,7 +40,7 @@ struct DataNodeCell {
   }
 
   NO_DISCARD page_size_t GetSize() const noexcept {
-    return static_cast<page_size_t>(sizeof(primary_key_t) + sizeof(entry_size_t) + size_of_entry
+    return static_cast<page_size_t>(key.size() + sizeof(entry_size_t) + size_of_entry
                                     + (key_size_is_serialized ? 2 : 0));
   }
 };
