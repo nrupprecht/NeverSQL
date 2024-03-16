@@ -33,7 +33,7 @@ TEST(Document, Basic) {
   EXPECT_EQ(reader.GetFieldName(2), "IsAlive"sv);
   EXPECT_ANY_THROW(reader.GetFieldName(3));
 
-  EXPECT_EQ(reader.GetFieldType(0), neversql::DataTypeEnum::Integer);
+  EXPECT_EQ(reader.GetFieldType(0), neversql::DataTypeEnum::Int32);
   EXPECT_EQ(reader.GetFieldType(1), neversql::DataTypeEnum::String);
   EXPECT_EQ(reader.GetFieldType(2), neversql::DataTypeEnum::Boolean);
   EXPECT_ANY_THROW(reader.GetFieldType(3));
