@@ -13,4 +13,8 @@ std::span<const std::byte> SpanValue(const T& value) noexcept {
   return std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(T));
 }
 
+inline std::span<const std::byte> SpanValue(const std::string& value) noexcept {
+  return std::span<const std::byte>(reinterpret_cast<const std::byte*>(value.data()), value.size());
 }
+
+}  // namespace neversql::internal

@@ -14,6 +14,7 @@
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
 #include "NeverSQL/data/internals/KeyComparison.h"
+#include "NeverSQL/utility/DataTypes.h"
 
 namespace neversql {
 
@@ -61,7 +62,10 @@ class BTreeManager {
   friend class DataManager;
 
 public:
-  explicit BTreeManager(PageCache* page_cache) noexcept;
+  explicit BTreeManager(page_number_t root_page, PageCache& page_cache);
+
+  //! \brief Set up a new B-tree, returning the root page.
+  static std::unique_ptr<BTreeManager> CreateNewBTree(PageCache& page_cache, DataTypeEnum key_type);
 
   //! \brief Add a value with a specified key to the BTree.
   void AddValue(GeneralKey key, std::span<const std::byte> value);
@@ -73,7 +77,13 @@ public:
   //! \param value The value payload to add to the B-tree.
   void AddValue(std::span<const std::byte> value);
 
+  //! \brief Get the root page number of the B-tree.
+  page_number_t GetRootPageNumber() const noexcept { return root_page_; }
+
 private:
+  //! \brief Initialize the B-tree manager object from the data in its root page.
+  void initialize();
+
   primary_key_t getNextPrimaryKey() const;
 
   BTreeNodeMap newNodePage(BTreePageType type, page_size_t reserved_space) const;
@@ -121,25 +131,23 @@ private:
   // =================================================================================================
 
   //! \brief Pointer to the NeverSQL database's data access layer.
-  PageCache* page_cache_ {};
+  PageCache& page_cache_;
+
+  //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
+  //!
+  page_number_t root_page_ {};
 
   //! \brief Whether the key's size needs to be serialized. TODO: Get this from the key type.
   bool serialize_key_size_ = false;
+
+  //! \brief The type of the primary key used for this tree.
+  DataTypeEnum key_type_ = DataTypeEnum::UInt64;
 
   //! \brief Function for comparing keys.
   CmpFunc cmp_;
 
   //! \brief Optionally, a function that can serialize a key to a string for debugging purposes.
   DebugKeyFunc debug_key_func_;
-
-  // TODO: Enum to identify the key type.
-
-  // TODO: Function for comparing keys.
-
-  //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
-  //!
-  //! This information comes from the DAL.
-  page_number_t index_page_ {};
 
   //! \brief The maximum entry size, in bytes, before an overflow page is needed
   page_size_t max_entry_size_ = 256;

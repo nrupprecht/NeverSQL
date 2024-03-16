@@ -75,11 +75,12 @@ void DocumentReader::initialize() {
     field_descriptor.type = static_cast<DataTypeEnum>(type);
     // Read the data. How we do this is type dependent.
     switch (field_descriptor.type) {
-      case DataTypeEnum::Integer: {
+      case DataTypeEnum::Int32: {
         field_descriptor.data = buffer.subspan(0, sizeof(int));
         buffer = buffer.subspan(sizeof(int));  // Shrink.
         break;
       }
+
       case DataTypeEnum::Double: {
         field_descriptor.data = buffer.subspan(0, sizeof(double));
         buffer = buffer.subspan(sizeof(double));  // Shrink.
@@ -103,9 +104,18 @@ void DocumentReader::initialize() {
         buffer = buffer.subspan(str_size);  // Shrink.
         break;
       }
+      case DataTypeEnum::Document:
+        break;
+      case DataTypeEnum::Array:
+        break;
+      case DataTypeEnum::Binary:
+        break;
+      case DataTypeEnum::Int64:
+        break;
 
       default:
         NOSQL_FAIL(lightning::formatting::Format("unknown data type, uint8_t value was {}", type));
+
     }
 
     fields_.emplace_back(std::move(field_descriptor));
@@ -152,8 +162,8 @@ void PrettyPrint(const DocumentReader& reader, std::ostream& out) {
   for (std::size_t i = 0; i < reader.GetNumFields(); ++i) {
     out << reader.GetFieldName(i) << ": ";
     switch (reader.GetFieldType(i)) {
-      case DataTypeEnum::Integer: {
-        out << reader.GetEntryAs<int>(i);
+      case DataTypeEnum::Int32: {
+        out << reader.GetEntryAs<int32_t>(i);
         break;
       }
       case DataTypeEnum::Double: {
@@ -174,6 +184,18 @@ void PrettyPrint(const DocumentReader& reader, std::ostream& out) {
       }
       default:
         NOSQL_FAIL("unknown data type");
+      case DataTypeEnum::Document:
+        out << "<Subdocument (TODO)>";
+        break;
+      case DataTypeEnum::Array:
+        out << "<Array (TODO)>";
+        break;
+      case DataTypeEnum::Binary:
+        out << "<Binary>";
+        break;
+      case DataTypeEnum::Int64:
+        out << reader.GetEntryAs<int64_t>(i);
+        break;
     }
     out << std::endl;
   }

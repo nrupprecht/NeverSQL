@@ -10,10 +10,51 @@
 
 namespace neversql {
 
-BTreeManager::BTreeManager(PageCache* page_cache) noexcept
+BTreeManager::BTreeManager(page_number_t root_page, PageCache& page_cache)
     : page_cache_(page_cache)
+    , root_page_(root_page)
     , cmp_(internal::CompareTrivial<primary_key_t>)
-    , debug_key_func_(internal::PrintUInt64) {}
+    , debug_key_func_(internal::PrintUInt64) {
+  // Initialize the tree from its root page.
+  initialize();
+}
+
+std::unique_ptr<BTreeManager> BTreeManager::CreateNewBTree(PageCache& page_cache, DataTypeEnum key_type) {
+  BTreeNodeMap root_node(page_cache.GetNewPage());
+
+  // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
+
+  // === Reserved space. =================================================================================
+  // 1 byte [Key type enum] int8_t
+  // 1 byte [Flags] uint8_t
+  // === If using auto-incrementing keys, space for the key. This is only possible with primary_key_t. ===
+  // 8 byte (optional) [Auto-incrementing key] primary_key_t
+  page_size_t reserved_space = 2;
+  if (key_type == DataTypeEnum::UInt64) {
+    reserved_space += sizeof(primary_key_t);
+  }
+
+  auto header = root_node.GetHeader();
+  header.InitializePage(root_node.GetPageNumber(), BTreePageType::RootLeaf, reserved_space);
+  // TODO: Right now, we only support string and uint64_t keys, and so assume that key size is specified if
+  //  the key type is a string.
+  if (key_type == DataTypeEnum::String) {
+    auto flags = header.GetFlags();
+    header.SetFlags(flags | 0b100);
+  }
+
+  LOG_SEV(Trace) << "Root page allocated to be page " << root_node.GetPageNumber() << ".";
+
+  // Write zero into the reserved space.
+  auto offset = root_node.GetHeader().GetReservedStart();
+  offset = root_node.GetPage().WriteToPage<int8_t>(offset, static_cast<int8_t>(key_type));
+  offset = root_node.GetPage().WriteToPage<uint8_t>(offset, 0);
+  if (key_type == DataTypeEnum::UInt64) {
+    offset = root_node.GetPage().WriteToPage<primary_key_t>(offset, 0);
+  }
+
+  return std::make_unique<BTreeManager>(root_node.GetPageNumber(), page_cache);
+}
 
 void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
   LOG_SEV(Debug) << "Adding value with key " << debugKey(key) << " to the B-tree.";
@@ -23,7 +64,7 @@ void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
   NOSQL_ASSERT(result.node, "could not find node to add element to");
 
   if (auto handler = LOG_HANDLER_FOR(lightning::Global::GetLogger(), Trace)) {
-    handler << "Search path (root is " << index_page_ << "):";
+    handler << "Search path (root is " << root_page_ << "):";
     for (std::size_t i = 0; i < result.path.Size(); ++i) {
       handler << lightning::NewLineIndent << "  * Page " << *result.path[i];
     }
@@ -38,7 +79,14 @@ void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
   // element.
   // TODO: More complex strategies could include vacuuming, looking for fragmented free space, etc.
   auto space_available = result.node->GetDefragmentedFreeSpace();
-  auto necessary_space = sizeof(page_size_t) + sizeof(primary_key_t) + sizeof(entry_size_t) + value.size();
+  // Cell offset, entry size, and the entry itself.
+  auto necessary_space = sizeof(page_size_t) + sizeof(entry_size_t) + value.size();
+  // Space required for the key.
+  if (serialize_key_size_) {
+    necessary_space += sizeof(uint16_t);
+  }
+  necessary_space += key.size();
+
   auto num_elements = result.node->GetNumPointers();
   LOG_SEV(Trace) << "Free space in node " << result.node->GetPageNumber() << " is " << space_available
                  << " bytes. Number of elements is " << num_elements << ". Total size of this entry is "
@@ -70,7 +118,8 @@ void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
 }
 
 void BTreeManager::AddValue(std::span<const std::byte> value) {
-  // TODO: Check whether this tree supports auto-incrementing keys.
+  NOSQL_REQUIRE(key_type_ == DataTypeEnum::UInt64,
+                "cannot add value with auto-incrementing key to B-tree with non-uint64_t key type");
 
   LOG_SEV(Debug) << "Adding value to the B-tree with auto-incrementing key.";
 
@@ -82,8 +131,34 @@ void BTreeManager::AddValue(std::span<const std::byte> value) {
   AddValue(key_span, value);
 }
 
+void BTreeManager::initialize() {
+  auto root = loadNodePage(root_page_);
+
+  // Get the key type from the root page.
+  key_type_ = static_cast<DataTypeEnum>(root->GetPage().Read<int8_t>(root->GetHeader().GetReservedStart()));
+
+  serialize_key_size_ = key_type_ == DataTypeEnum::String;
+
+  // Get default key comparison and debug functions.
+  if (key_type_ == DataTypeEnum::UInt64) {
+    cmp_ = internal::CompareTrivial<primary_key_t>;
+    debug_key_func_ = internal::PrintUInt64;
+  }
+  else if (key_type_ == DataTypeEnum::String) {
+    cmp_ = internal::CompareString;
+    debug_key_func_ = internal::PrintString;
+  }
+  else {
+    // TODO: Implement for other key types.
+    NOSQL_FAIL("unsupported key type");
+  }
+}
+
 primary_key_t BTreeManager::getNextPrimaryKey() const {
-  auto root = loadNodePage(index_page_);
+  // Only possible if the key type is uint64_t.
+  NOSQL_ASSERT(key_type_ == DataTypeEnum::UInt64, "cannot get next primary key for non-uint64_t key type");
+
+  auto root = loadNodePage(root_page_);
   primary_key_t pk {};
 
   auto counter_offset = root->GetHeader().GetReservedStart();
@@ -97,7 +172,7 @@ primary_key_t BTreeManager::getNextPrimaryKey() const {
 }
 
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, page_size_t reserved_space) const {
-  BTreeNodeMap node(page_cache_->GetNewPage());
+  BTreeNodeMap node(page_cache_.GetNewPage());
   // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
   node.cmp_ = cmp_;
   node.debug_key_func_ = debug_key_func_;
@@ -107,7 +182,7 @@ BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, page_size_t reserved_
 }
 
 std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number) const {
-  BTreeNodeMap node(page_cache_->GetPage(page_number));
+  BTreeNodeMap node(page_cache_.GetPage(page_number));
 
   // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
   node.cmp_ = cmp_;
@@ -163,11 +238,13 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 
   auto& page = node_map.GetPage();
 
-  // TODO: If the keys have variable sizes, this needs to change.
   // TODO: If we allow for overflow pages, this needs to change.
   auto pointer_space = sizeof(page_size_t);
-  auto cell_space = sizeof(primary_key_t) + (data.serialize_data_size ? sizeof(entry_size_t) : 0)
-      + data.serialized_value.size();
+  auto cell_space =
+      data.key.size() + (data.serialize_data_size ? sizeof(entry_size_t) : 0) + data.serialized_value.size();
+  if (header.AreKeySizesSpecified()) {
+    cell_space += sizeof(uint16_t);
+  }
   auto required_space = pointer_space + cell_space;
   LOG_SEV(Trace) << "Entry will take up " << pointer_space << " bytes of pointer space and " << cell_space
                  << " bytes of cell space, for a total of " << required_space << " bytes.";
@@ -213,11 +290,11 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   offset = page.WriteToPage(offset, data.serialized_value);
 
   // Make sure we wrote the correct amount of data.
-  // clang-format off
+
   NOSQL_ASSERT(offset == entry_end_offset,
-               "incorrect amount of data written to node, expected " << required_space << " bytes, wrote "
-               << (offset - entry_start_offset) << " bytes");
-  // clang-format on
+               "incorrect amount of data written to cell in node "
+                   << header.GetPageNumber() << ", expected " << cell_space << " bytes, wrote "
+                   << (offset - entry_start_offset) << " bytes");
 
   // Added the cell.
   header.SetFreeEnd(static_cast<page_size_t>(header.GetFreeEnd() - cell_space));
@@ -277,6 +354,10 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
   // Unbalanced split: move all, or almost all, elements to the new page. Most efficient for adding
   //  consecutive keys.
 
+  // If the key type is UInt64, we are using auto-incrementing primary keys (this is the assumption for now,
+  // at least), so we should not do a balanced split.
+  bool do_balanced_split = key_type_ != DataTypeEnum::UInt64;
+
   auto&& header = node.GetHeader();
   LOG_SEV(Debug) << "Splitting node on page " << node.GetPageNumber() << " with " << node.GetNumPointers()
                  << " pointers.";
@@ -288,7 +369,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 
   // Divide elements between the two nodes.
   page_size_t num_elements = node.GetNumPointers();
-  page_size_t num_elements_to_move = num_elements - 1;
+  page_size_t num_elements_to_move = do_balanced_split ? num_elements / 2 : num_elements - 1;
 
   // Interior node.
   auto pointers = node.getPointers();
@@ -399,8 +480,12 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node, std::optional<StoreD
 void BTreeManager::splitRoot(std::optional<StoreData> data) {
   LOG_SEV(Debug) << "Splitting root node.";
 
+  // If the key type is UInt64, we are using auto-incrementing primary keys (this is the assumption for now,
+  // at least), so we should not do a balanced split.
+  bool do_balanced_split = key_type_ != DataTypeEnum::UInt64;
+
   // Create two child pages, spit the nodes between them.
-  auto root = loadNodePage(index_page_);
+  auto root = loadNodePage(root_page_);
   auto&& root_header = root->GetHeader();
   NOSQL_ASSERT(root, "could not find root node");
 
@@ -416,8 +501,8 @@ void BTreeManager::splitRoot(std::optional<StoreData> data) {
   LOG_SEV(Trace) << "Created left and right children with page numbers " << left_page_number << " and "
                  << right_page_number << ".";
 
-  // Put all but one pointer in the left tree.
-  page_size_t num_for_left = root->GetNumPointers() - 1;
+  // Balanced or unbalanced split.
+  page_size_t num_for_left = do_balanced_split ? root->GetNumPointers() / 2 : root->GetNumPointers() - 1;
   auto split_key = root->getKeyForNthCell(num_for_left);
   LOG_SEV(Trace) << "Split key will be " << debugKey(split_key) << ".";
 
@@ -546,7 +631,7 @@ SearchResult BTreeManager::search(GeneralKey key) const {
   SearchResult result;
 
   auto node = [this] {
-    auto root = loadNodePage(index_page_);
+    auto root = loadNodePage(root_page_);
     NOSQL_ASSERT(root, "could not find root node");
     return std::move(*root);
   }();

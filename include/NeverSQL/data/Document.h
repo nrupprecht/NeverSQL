@@ -36,7 +36,8 @@ public:
 
   template<typename T>
   void AddEntry(const std::string& name, T&& data) {
-    fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<T>(), .data = std::forward<T>(data)});
+    using type = std::decay_t<std::remove_cvref_t<T>>;
+    addEntry<T, type>(name, std::forward<T>(data));
   }
 
   template<typename T>
@@ -45,6 +46,17 @@ public:
     NOSQL_ASSERT(it != fields_.end(), "field '" << name << "' not found");
     NOSQL_ASSERT(it->type == GetDataTypeEnum<T>(), "type mismatch");
     return std::get<T>(it->data);
+  }
+
+private:
+  template<typename T, typename D>
+  void addEntry(const std::string& name, T&& data) {
+    if constexpr (std::is_same_v<D, char*>) {
+      fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<std::string>(), .data = std::string(data)});
+    }
+    else {
+      fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<T>(), .data = std::forward<T>(data)});
+    }
   }
 };
 

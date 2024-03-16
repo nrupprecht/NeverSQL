@@ -28,7 +28,7 @@ enum class BTreePageType : uint8_t {
 //! P => Pointers page (0 = no, 1 = yes). Leaf nodes and the root node in pointer-mode (when the root has
 //!     children) have this flag set to true.
 //! R => Root node (0 = no, 1 = yes). The root node has this flag set to true.
-//! K => Key sizes specified (0 = no, 1 = yes). The key size is a 16 bit integer.
+//! K => Key sizes specified (0 = no, 1 = yes). The key size, if serialized, is a 16 bit integer.
 //!
 //! The rest of the bits are reserved for future use and denoted by '0's.
 //!

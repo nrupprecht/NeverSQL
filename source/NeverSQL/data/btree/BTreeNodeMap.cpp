@@ -141,16 +141,31 @@ GeneralKey BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
-  auto key_size_is_serialized = getHeader().AreKeySizesSpecified();
+  const auto& header = getHeader();
+  auto key_size_is_serialized = header.AreKeySizesSpecified();
+  std::span<const std::byte> key;
+
+  auto post_key_offset = cell_offset;
+  if (key_size_is_serialized) {
+    auto key_size = page_->Read<uint16_t>(cell_offset);
+    post_key_offset += sizeof(uint16_t) + key_size;
+    key = page_->GetSpan(cell_offset + sizeof(uint16_t), key_size);
+  }
+  else {
+    // TODO: For now at least, assume that keys whose size are not specified are uint64_t. This can be relaxed later.
+    post_key_offset += sizeof(primary_key_t);
+    key = page_->GetSpan(cell_offset, sizeof(primary_key_t));
+  }
+
   if (getHeader().IsPointersPage()) {
-    return PointersNodeCell {.key = getKeyForCell(cell_offset),
-                             .page_number = page_->Read<page_number_t>(cell_offset + sizeof(primary_key_t)),
+    return PointersNodeCell {.key = key,
+                             .page_number = page_->Read<page_number_t>(post_key_offset),
                              .key_size_is_serialized = key_size_is_serialized};
   }
   return DataNodeCell {
-      .key = getKeyForCell(cell_offset),
-      .size_of_entry = page_->Read<entry_size_t>(cell_offset + sizeof(primary_key_t)),
-      .start_of_value = page_->GetData() + cell_offset + sizeof(primary_key_t) + sizeof(entry_size_t),
+      .key = key,
+      .size_of_entry = page_->Read<entry_size_t>(post_key_offset),
+      .start_of_value = page_->GetData() + post_key_offset + sizeof(entry_size_t),
       .key_size_is_serialized = key_size_is_serialized};
 }
 

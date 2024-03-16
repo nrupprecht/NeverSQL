@@ -15,7 +15,7 @@ namespace neversql {
 struct RetrievalResult {
   SearchResult search_result;
   page_size_t cell_offset {};
-  std::span<const std::byte> value_view;
+  std::span<const std::byte> value_view {};
 
   bool IsFound() const noexcept { return search_result.node.has_value(); }
 };
@@ -26,20 +26,41 @@ class DataManager {
 public:
   explicit DataManager(const std::filesystem::path& database_path);
 
-  //! \brief Add a value to the database.
-  void AddValue(primary_key_t key, std::span<const std::byte> value);
+  //! \brief Add a collection to the database.
+  void AddCollection(const std::string& collection_name, DataTypeEnum key_type);
 
-  //! \brief Add a value to the database using an auto incrementing key.
-  void AddValue(std::span<const std::byte> value);
+  // ========================================
+  //  General key methods
+  // ========================================
 
-  //! \brief Add a document to the database.
-  void AddValue(const DocumentBuilder& document);
+  void AddValue(const std::string& collection_name, GeneralKey key, std::span<const std::byte> value);
+
+  void AddValue(const std::string& collection_name, GeneralKey key, const DocumentBuilder& document);
 
   //! \brief Get a search result for a given key.
-  SearchResult Search(primary_key_t key) const;
+  SearchResult Search(const std::string& collection_name, GeneralKey key) const;
 
   //! \brief Retrieve a value from the database along with data about the retrieval.
-  RetrievalResult Retrieve(primary_key_t key) const;
+  RetrievalResult Retrieve(const std::string& collection_name, GeneralKey key) const;
+
+  // ========================================
+  //  Primary key methods
+  // ========================================
+
+  //! \brief Add a value to the database.
+  void AddValue(const std::string& collection_name, primary_key_t key, std::span<const std::byte> value);
+
+  //! \brief Add a value to the database using an auto incrementing key.
+  void AddValue(const std::string& collection_name, std::span<const std::byte> value);
+
+  //! \brief Add a document to the database.
+  void AddValue(const std::string& collection_name, const DocumentBuilder& document);
+
+  //! \brief Get a search result for a given key.
+  SearchResult Search(const std::string& collection_name, primary_key_t key) const;
+
+  //! \brief Retrieve a value from the database along with data about the retrieval.
+  RetrievalResult Retrieve(const std::string& collection_name, primary_key_t key) const;
 
   // ========================================
   // Debugging and Diagnostic Functions
@@ -53,13 +74,17 @@ public:
 
   //! \brief Get the data access layer, so it can be queried for information.
   const DataAccessLayer& GetDataAccessLayer() const { return data_access_layer_; }
+
 private:
   //! \brief The data access layer for the database.
   DataAccessLayer data_access_layer_;
 
   mutable PageCache page_cache_;
 
-  BTreeManager primary_index_;
+  std::unique_ptr<BTreeManager> collection_index_;
+
+  //! \brief Cache the collections that are in the database.
+  std::map<std::string, std::unique_ptr<BTreeManager>> collections_;
 };
 
 }  // namespace neversql

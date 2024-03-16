@@ -31,6 +31,8 @@ int main() {
   LOG_SEV(Info) << lightning::formatting::Format("Database has {:L} pages.",
                                                  manager.GetDataAccessLayer().GetNumPages());
 
+  manager.AddCollection("elements", neversql::DataTypeEnum::UInt64);
+
   primary_key_t pk = 0;
   auto starting_time_point = std::chrono::high_resolution_clock::now();
   auto time_point = starting_time_point;
@@ -44,7 +46,7 @@ int main() {
       builder.AddEntry("pk", static_cast<int>(pk));
       builder.AddEntry("is_even", pk % 2 == 0);
       // Add the document.
-      manager.AddValue(builder);
+      manager.AddValue("elements", builder);
 
       if ((pk + 1) % batch_size == 0) {
         auto next_time_point = std::chrono::high_resolution_clock::now();
@@ -84,7 +86,7 @@ int main() {
   auto first_to_probe = num_to_insert / 2;
   auto last_to_probe = std::min(num_to_insert / 2 + 10, num_to_insert);
   for (primary_key_t pk_probe = first_to_probe; pk_probe < last_to_probe; ++pk_probe) {
-    auto result = manager.Retrieve(pk_probe);
+    auto result = manager.Retrieve("elements", pk_probe);
     if (result.IsFound()) {
       auto& view = result.value_view;
 

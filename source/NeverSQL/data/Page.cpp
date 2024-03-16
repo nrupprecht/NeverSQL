@@ -35,7 +35,8 @@ RCPage::~RCPage() {
 
 page_size_t RCPage::WriteToPage(page_size_t offset, std::span<const std::byte> data) {
   NOSQL_REQUIRE(offset + data.size() <= page_size_,
-                "WriteToPage: offset + data.size() is greater than page size");
+                "WriteToPage: offset + data.size() ("
+                    << offset + data.size() << ") is greater than page size (" << page_size_ << ").");
 
   // Since we write to the page, the page is now dirty.
   owning_cache_->SetDirty(descriptor_index_);
