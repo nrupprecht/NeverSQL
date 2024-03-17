@@ -6,14 +6,14 @@
 
 #include <functional>
 #include <concepts>
+#include <type_traits>
 
 #include "NeverSQL/utility/Defines.h"
 
 namespace neversql {
 
 //! \brief A stack (first in, last out) that uses a buffer of a predetermined, fixed size to store its data.
-template<typename T, std::size_t StackSize_v = 128>
-  requires std::is_trivially_constructible_v<T>
+template<std::default_initializable T, std::size_t StackSize_v = 128>
 class FixedStack {
 public:
   NO_DISCARD constexpr std::size_t Capacity() const noexcept { return StackSize_v; }
