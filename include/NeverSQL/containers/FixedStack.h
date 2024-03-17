@@ -13,7 +13,7 @@ namespace neversql {
 
 //! \brief A stack (first in, last out) that uses a buffer of a predetermined, fixed size to store its data.
 template<typename T, std::size_t StackSize_v = 128>
-  requires std::is_nothrow_constructible_v<T>
+  requires std::is_trivially_constructible_v<T>
 class FixedStack {
 public:
   NO_DISCARD constexpr std::size_t Capacity() const noexcept { return StackSize_v; }
