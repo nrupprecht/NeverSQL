@@ -167,7 +167,8 @@ void BTreeManager::AddValue(GeneralKey key, std::span<const std::byte> value) {
   if (auto handler = LOG_HANDLER_FOR(lightning::Global::GetLogger(), Trace)) {
     handler << "Search path (root is " << root_page_ << "):";
     for (std::size_t i = 0; i < result.path.Size(); ++i) {
-      handler << lightning::NewLineIndent << "  * Page " << *result.path[i];
+      handler << lightning::NewLineIndent << "  * Page " << result.path[i]->first << ", index "
+              << result.path[i]->second << ".";
     }
     if (result.node) {
       handler << lightning::NewLineIndent << "Found node is " << result.node->GetPageNumber() << ".";
@@ -324,9 +325,9 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   // =======================================
 
   if (unique_keys) {
-    if (auto offset = node_map.getCellLowerBoundByPK(data.key)) {
+    if (auto lower_bound = node_map.getCellLowerBoundByPK(data.key)) {
       // If the key is already in the node, we cannot add it again.
-      auto cell = node_map.getCell(*offset);
+      auto cell = node_map.getCell(lower_bound->first);
       bool found_key =
           std::visit([data](auto&& cell) { return std::ranges::equal(cell.key, data.key); }, cell);
       if (found_key) {
@@ -426,7 +427,7 @@ void BTreeManager::splitNode(BTreeNodeMap& node, SearchResult& result, std::opti
   result.path.Pop();
 
   // Left page is the original page, right page has to be added to the parent.
-  auto parent_page_number = *result.path.Top();
+  auto parent_page_number = result.path.Top()->get().first;
   LOG_SEV(Trace) << "  * Adding right page " << split_data.right_page << " to parent page "
                  << parent_page_number << ".";
 
@@ -734,20 +735,30 @@ SearchResult BTreeManager::search(GeneralKey key) const {
     return std::move(*root);
   }();
 
-  result.path.Push(node.GetPageNumber());
+  auto current_page_number = node.GetPageNumber();
+
   // Loop until found. Since this is a (presumably well-formed) B-tree, this should always terminate.
   for (;;) {
     if (!node.IsPointersPage()) {
+      if (auto lower_bound = node.getCellLowerBoundByPK(key)) {
+        result.path.Emplace(current_page_number, lower_bound->second);
+      }
+      else {
+        result.path.Emplace(current_page_number, node.GetNumPointers());
+      }
+
       // Elements are allocated directly in this page.
       result.node = std::move(node);
       break;
     }
 
-    auto next_page_number = node.searchForNextPageInPointersPage(key);
+    auto [next_page_number, offset] = node.searchForNextPageInPointersPage(key);
 
     NOSQL_REQUIRE(next_page_number != node.GetPageNumber(), "infinite loop detected in search");
 
-    result.path.Push(next_page_number);
+    result.path.Push({current_page_number, offset});
+    current_page_number = next_page_number;
+
     auto child = loadNodePage(next_page_number);
     node = std::move(*child);
   }

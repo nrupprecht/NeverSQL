@@ -81,23 +81,23 @@ std::optional<page_size_t> BTreeNodeMap::getCellByKey(GeneralKey key) const {
   return {};
 }
 
-std::optional<page_size_t> BTreeNodeMap::getCellLowerBoundByPK(GeneralKey key) const {
+std::optional<std::pair<page_size_t, page_index_t>> BTreeNodeMap::getCellLowerBoundByPK(GeneralKey key) const {
   std::span<const page_size_t> pointers = getPointers();
   auto it = std::ranges::lower_bound(
       pointers, key, cmp_, [this](auto&& ptr) { return getKeyForCell(ptr); });
   if (it == pointers.end()) {
     return {};
   }
-  return *it;
+  return std::make_optional(std::pair{*it, static_cast<page_index_t>(std::distance(pointers.begin(), it))});
 }
 
-page_number_t BTreeNodeMap::searchForNextPageInPointersPage(GeneralKey key) const {
+std::pair<page_number_t, page_index_t> BTreeNodeMap::searchForNextPageInPointersPage(GeneralKey key) const {
   NOSQL_REQUIRE(getHeader().IsPointersPage(), "cannot get next page from a page that is not a pointers page");
 
   if (GetNumPointers() == 0) {
     auto next_page = getHeader().GetAdditionalData();
     NOSQL_ASSERT(next_page != 0, "next page cannot be the 0 page");
-    return next_page;
+    return {next_page, 0};
   }
 
   auto num_pointers = GetNumPointers();
@@ -106,14 +106,14 @@ page_number_t BTreeNodeMap::searchForNextPageInPointersPage(GeneralKey key) cons
     auto next_page = getHeader().GetAdditionalData();
     NOSQL_ASSERT(next_page != 0,
                  "rightmost pointer in page " << GetPageNumber() << " set to 0, error in rightmost pointer");
-    return next_page;
+    return {next_page, num_pointers};
   }
   // Get the offset to the first key that is greater
   auto offset = getCellLowerBoundByPK(key);
   NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << debugKey(key));
   // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
   // number.
-  return page_->Read<primary_key_t>(*offset + sizeof(primary_key_t));
+  return {page_->Read<primary_key_t>(offset->first + sizeof(primary_key_t)), offset->second};
 }
 
 std::span<const page_size_t> BTreeNodeMap::getPointers() const {

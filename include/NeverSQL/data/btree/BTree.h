@@ -18,11 +18,16 @@
 
 namespace neversql {
 
+//! \brief Structure used to represent a position in the B-tree.
+//!
+//! Represents the page, and the index of the cell in the page.
+using TreePosition = FixedStack<std::pair<page_number_t, page_size_t>>;
+
 //! \brief The result of doing a search in the B-tree.
 //!
 //! Includes the search path (in pages) that was taken, along with the node that was found.
 struct SearchResult {
-  FixedStack<page_number_t> path;
+  TreePosition path;
   std::optional<BTreeNodeMap> node {};
 
   //! \brief Get how many layers had to be searched to find the node.
@@ -107,7 +112,7 @@ public:
     const BTreeManager& manager_;
 
     //! \brief The current progress at every level of the tree.
-    FixedStack<std::pair<page_number_t, page_size_t>> progress_;
+    TreePosition progress_;
   };
 
   Iterator begin() const { return Iterator(*this); }

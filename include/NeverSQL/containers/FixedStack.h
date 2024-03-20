@@ -36,8 +36,17 @@ public:
     }
   }
 
+  template<typename... Args_t>
+  constexpr void Emplace(Args_t&&... args) {
+    if (!Full()) {
+      new (&buffer_[size_++]) T(args...);
+    }
+  }
+
   constexpr void Pop() noexcept {
     if (!Empty()) {
+      // Call destructor.
+      buffer_[size_].~T();
       --size_;
     }
   }

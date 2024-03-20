@@ -31,6 +31,9 @@ using page_number_t = uint64_t;
 //! \brief The datatype to use to represent the size of a page, or the size of offsets within a page.
 using page_size_t = uint16_t;
 
+//! \brief The datatype used to represent the index of a cell or pointer in a page.
+using page_index_t = uint16_t;
+
 //! \brief The data type to use to represent the size of an entry in a page.
 using entry_size_t = uint32_t;
 

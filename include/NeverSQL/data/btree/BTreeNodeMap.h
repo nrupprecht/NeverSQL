@@ -7,8 +7,8 @@
 #include <span>
 
 #include "NeverSQL/data/Page.h"
-#include "NeverSQL/data/internals/KeyPrinting.h"
 #include "NeverSQL/data/btree/BTreePageHeader.h"
+#include "NeverSQL/data/internals/KeyPrinting.h"
 
 namespace neversql {
 
@@ -130,13 +130,15 @@ private:
   //! primary key of the cell that they refer to.
   //!
   //! \param key The primary key to search for.
-  //! \return The offset to the start of the cell, or std::nullopt if there are no keys greater than or equal
-  //! to the given key.
-  std::optional<page_size_t> getCellLowerBoundByPK(GeneralKey key) const;
+  //! \return The offset to the start of the cell and index of the cell in the page (index of the pointers
+  //! cell), or std::nullopt if there are no keys greater than or equal to the given key.
+  std::optional<std::pair<page_size_t, page_index_t>> getCellLowerBoundByPK(GeneralKey key) const;
 
-  //! \brief If this is a pointers page, get the next page to search on. If this is not a pointers page,
-  //! raises and error.
-  page_number_t searchForNextPageInPointersPage(GeneralKey key) const;
+  //! \brief If this is a pointers page, get the next page to search on, returning the page number and the
+  //! index of the pointer to the next page in the current page. If the page is the rightmost page, returns
+  //! the number of pointers as the index.
+  //! If this is not a pointers page, raises and error.
+  std::pair<page_number_t, page_index_t> searchForNextPageInPointersPage(GeneralKey key) const;
 
   //! \brief Get a span of the offsets in the node.
   std::span<const page_size_t> getPointers() const;
