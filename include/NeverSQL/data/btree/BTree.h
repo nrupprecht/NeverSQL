@@ -107,6 +107,8 @@ public:
     bool operator==(const Iterator& other) const;
     bool operator!=(const Iterator& other) const;
 
+    bool IsEnd() const noexcept { return done(); }
+
   private:
     //! \brief Check if the iterator is at the end.
     bool done() const noexcept;

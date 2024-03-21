@@ -24,7 +24,8 @@ BTreeManager::Iterator::Iterator(const BTreeManager& manager)
   }
 }
 
-BTreeManager::Iterator::Iterator(const BTreeManager& manager, FixedStack<std::pair<page_number_t, page_size_t>> progress)
+BTreeManager::Iterator::Iterator(const BTreeManager& manager,
+                                 FixedStack<std::pair<page_number_t, page_size_t>> progress)
     : manager_(manager)
     , progress_(std::move(progress)) {}
 
@@ -81,9 +82,13 @@ bool BTreeManager::Iterator::operator==(const Iterator& other) const {
   return progress_ == other.progress_ || (done() && other.done());
 }
 
-bool BTreeManager::Iterator::operator!=(const Iterator& other) const { return !(*this == other); }
+bool BTreeManager::Iterator::operator!=(const Iterator& other) const {
+  return !(*this == other);
+}
 
-bool BTreeManager::Iterator::done() const noexcept { return progress_.Empty(); }
+bool BTreeManager::Iterator::done() const noexcept {
+  return progress_.Empty();
+}
 
 void BTreeManager::Iterator::descend(const BTreeNodeMap& page, page_size_t index) {
   if (!page.IsPointersPage()) {
@@ -342,6 +347,9 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
     }
   }
 
+  // Store the current greatest key, so after we add a key, we can check if we need to sort the page.
+  auto greatest_pk = node_map.GetLargestKey();
+
   auto& page = node_map.GetPage();
 
   // TODO: If we allow for overflow pages, this needs to change.
@@ -409,7 +417,9 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 
   // Make sure keys are all in ascending order. Only need to do this if the keys are not already sorted
   // (i.e. this was not a rightmost append).
-  if (auto greatest_pk = node_map.GetLargestKey(); greatest_pk && cmp_(data.key, *greatest_pk)) {
+  if (greatest_pk && cmp_(data.key, *greatest_pk)) {
+    LOG_SEV(Debug) << "New key is not the largest key, sorting keys in node " << header.GetPageNumber()
+                   << ".";
     node_map.sortKeys();
   }
 
