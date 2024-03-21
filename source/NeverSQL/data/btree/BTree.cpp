@@ -17,8 +17,11 @@ namespace neversql {
 BTreeManager::Iterator::Iterator(const BTreeManager& manager)
     : manager_(manager) {
   auto root = manager_.loadNodePage(manager.GetRootPageNumber());
-  progress_.Push({manager.GetRootPageNumber(), 0});
-  descend(*root, 0);
+  // If the tree is empty, begin is end.
+  if (root->GetNumPointers() != 0) {
+    progress_.Push({manager.GetRootPageNumber(), 0});
+    descend(*root, 0);
+  }
 }
 
 BTreeManager::Iterator::Iterator(const BTreeManager& manager, FixedStack<std::pair<page_number_t, page_size_t>> progress)
@@ -38,7 +41,7 @@ BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
   auto current_page = *manager_.loadNodePage(current_page_number);
   current_index++;
   // There is no more data in the current data page.
-  if (current_index == current_page.GetNumPointers()) {
+  if (current_page.GetNumPointers() <= current_index) {
     progress_.Pop();
 
     while (!done()) {
@@ -319,8 +322,9 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   // ============ Pointer space ============
   // Offset to value: sizeof(page_size_t)
   // ============   Cell space  ============
-  // Primary key: sizeof(primary_key_t)
-  // Size of value: sizeof(entry_size_t) [if store_size is true]
+  // [Potentially size of key: sizeof(uint16_t)]
+  // Primary key, either fixed size (sizeof(primary_key_t)) or variable size.
+  // [Potentially size of value: sizeof(entry_size_t), if store_size is true]
   // Value: serialized_value.size()
   // =======================================
 

@@ -17,7 +17,7 @@ private:
   struct Field {
     std::string name;
     DataTypeEnum type;
-    std::variant<int, double, bool, std::string> data;
+    std::variant<int, uint64_t, double, bool, std::string> data;
   };
 
   std::vector<Field> fields_;

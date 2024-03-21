@@ -30,7 +30,20 @@ DataManager::DataManager(const std::filesystem::path& database_path)
     LOG_SEV(Trace) << "Loaded collection index from page " << meta.GetIndexPage() << ".";
 
     collection_index_ = std::make_unique<BTreeManager>(meta.GetIndexPage(), page_cache_);
-    // TODO: Traverse all the collections and cache them as BTreeManagers in collections_.
+    std::size_t num_collections{};
+    for (auto it : *collection_index_) {
+      // Interpret the data as a document.
+      DocumentReader reader(it);
+
+      auto collection_name = reader.GetEntryAs<std::string>("collection_name");
+      auto page_number = reader.GetEntryAs<page_number_t>("index_page_number");
+
+      LOG_SEV(Debug) << "Loaded collection named '" << collection_name << "' with index page " << page_number
+                     << ".";
+      collections_.emplace(collection_name, std::make_unique<BTreeManager>(page_number, page_cache_));
+      ++num_collections;
+    }
+    LOG_SEV(Debug) << "Found " << num_collections << " collections.";
   }
 }
 
@@ -39,8 +52,20 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
   auto btree = BTreeManager::CreateNewBTree(page_cache_, key_type);
 
   auto page_number = btree->GetRootPageNumber();
-  collection_index_->AddValue(internal::SpanValue(collection_name), internal::SpanValue(page_number));
 
+  neversql::DocumentBuilder document;
+  document.AddEntry("collection_name", collection_name);
+  document.AddEntry("index_page_number", page_number);
+
+  //  NOTE: This is not the best way to do this, I just want to get something that works.
+  [[maybe_unused]] auto size = document.CalculateRequiredSize();
+  lightning::memory::MemoryBuffer<std::byte> buffer;
+
+  WriteToBuffer(buffer, document);
+  std::span<const std::byte> value(buffer.Data(), buffer.Size());
+  collection_index_->AddValue(internal::SpanValue(collection_name), value);
+
+  // Cache the collection in the data manager.
   collections_.emplace(collection_name, std::move(btree));
 }
 
@@ -133,6 +158,11 @@ RetrievalResult DataManager::Retrieve(const std::string& collection_name, primar
   return Retrieve(collection_name, key_span);
 }
 
+std::set<std::string> DataManager::GetCollectionNames() const {
+  std::set<std::string> output;
+  std::ranges::for_each(collections_, [&output](const auto& pair) { output.insert(pair.first); });
+  return output;
+}
 
 BTreeManager::Iterator DataManager::Begin(const std::string& collection_name) const {
   auto it = collections_.find(collection_name);

@@ -87,6 +87,12 @@ public:
 
   class Iterator {
   public:
+    using difference_type = std::ptrdiff_t;
+    using value_type = std::span<const std::byte>;
+    using pointer = value_type*;
+    using reference = value_type&;
+    using iterator_category = std::forward_iterator_tag;
+
     //! \brief Create a begin iterator for the B-tree.
     explicit Iterator(const BTreeManager& manager);
 

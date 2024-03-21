@@ -62,6 +62,9 @@ public:
   //! \brief Retrieve a value from the database along with data about the retrieval.
   RetrievalResult Retrieve(const std::string& collection_name, primary_key_t key) const;
 
+  //! \brief Get the names of all collections.
+  std::set<std::string> GetCollectionNames() const;
+
   // ========================================
   // FOR NOW: Test search and iteration methods.
   // ========================================

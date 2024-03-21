@@ -111,8 +111,13 @@ void DocumentReader::initialize() {
       case DataTypeEnum::Binary:
         break;
       case DataTypeEnum::Int64:
+        field_descriptor.data = buffer.subspan(0, sizeof(int64_t));
+      buffer = buffer.subspan(sizeof(int64_t));  // Shrink.
         break;
-
+      case DataTypeEnum::UInt64:
+        field_descriptor.data = buffer.subspan(0, sizeof(uint64_t));
+        buffer = buffer.subspan(sizeof(uint64_t));  // Shrink.
+        break;
       default:
         NOSQL_FAIL(lightning::formatting::Format("unknown data type, uint8_t value was {}", type));
 
@@ -139,7 +144,7 @@ void WriteToBuffer(lightning::memory::BasicMemoryBuffer<std::byte>& buffer, cons
         [&](auto&& arg) {
           using T = std::decay_t<decltype(arg)>;
           // Trivially copyable types.
-          if constexpr (std::is_same_v<T, int> || std::is_same_v<T, bool> || std::is_same_v<T, double>) {
+          if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T>) {
             const auto* ptr = reinterpret_cast<const std::byte*>(&arg);
             buffer.Append(ptr, ptr + sizeof(arg));
           }
@@ -152,6 +157,9 @@ void WriteToBuffer(lightning::memory::BasicMemoryBuffer<std::byte>& buffer, cons
             // Then write the string itself.
             const auto* start_ptr = reinterpret_cast<const std::byte*>(arg.data());
             buffer.Append(start_ptr, start_ptr + str_size);
+          }
+          else {
+            static_assert(lightning::typetraits::always_false_v<T>, "unhandled type");
           }
         },
         field.data);
