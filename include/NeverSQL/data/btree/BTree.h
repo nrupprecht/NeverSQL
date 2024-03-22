@@ -42,8 +42,9 @@ struct StoreData {
   //! \brief The payload of the store operation.
   std::span<const std::byte> serialized_value {};
 
-  //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed size
-  //! that is known by the B-tree manager.
+  //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed sizes
+  //!        that is known by the B-tree manager.
+  //!
   bool serialize_key_size = false;
 
   //! \brief Whether to serialize the size of the data.
@@ -168,7 +169,7 @@ private:
   //!
   //! Uses the debug_key_func_ if it is available, otherwise, string-ize the bytes.
   //!
-  //! \param key
+  //! \param key The key to convert to a string.
   //! \return string representation of the key, implementation defined.
   std::string debugKey(GeneralKey key) const;
 

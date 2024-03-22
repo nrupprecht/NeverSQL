@@ -11,7 +11,7 @@
 namespace neversql {
 
 //! \brief Free-list data structure. This is used to keep track of the pages in the database and to allocate
-//! new pages.
+//!        new pages.
 class FreeList {
   friend class DataAccessLayer;
 
@@ -20,15 +20,15 @@ public:
   FreeList() = default;
 
   //! \brief Constructs a free list that starts with the given number of free slots and specify whether it can
-  //! allocate new slots.
+  //!        allocate new slots.
   FreeList(std::size_t starting_slots, bool can_allocate);
 
   //! \brief Get the next page from the free list. If a next free slot cannot be found or allocated, returns
-  //! nullptr.
+  //!        nullptr.
   NO_DISCARD std::optional<page_number_t> GetNextPage();
 
   //! \brief Release a page back to the free list. Returns true if the page was successfully released, false
-  //! if the page was not acquired in the first place.
+  //!        if the page was not acquired in the first place.
   bool ReleasePage(page_number_t page_number);
 
   //! \brief Get the number of allocated pages.

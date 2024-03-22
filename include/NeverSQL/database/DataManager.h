@@ -4,9 +4,10 @@
 
 #pragma once
 
+#include "NeverSQL/data/Document.h"
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTree.h"
-#include "NeverSQL/data/Document.h"
+#include "NeverSQL/database/Query.h"
 #include "NeverSQL/utility/HexDump.h"
 
 namespace neversql {
@@ -21,7 +22,7 @@ struct RetrievalResult {
 };
 
 //! \brief Object that manages the data in the database, e.g. setting up B-trees and indices within the
-//! database.
+//!        database.
 class DataManager {
 public:
   explicit DataManager(const std::filesystem::path& database_path);

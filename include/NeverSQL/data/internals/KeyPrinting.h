@@ -35,7 +35,8 @@ inline std::string PrintUInt64(std::span<const std::byte> key) {
 }
 
 inline std::string PrintString(std::span<const std::byte> key) {
-  return lightning::formatting::Format("{:?}", std::string_view(reinterpret_cast<const char*>(key.data()), key.size()));
+  return lightning::formatting::Format(
+      "{:?}", std::string_view(reinterpret_cast<const char*>(key.data()), key.size()));
 }
 
 }  // namespace neversql::internal

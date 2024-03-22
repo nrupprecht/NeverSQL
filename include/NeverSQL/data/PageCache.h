@@ -14,11 +14,11 @@
 namespace neversql {
 
 //! \brief Class that keeps a cache of pages in memory. This is useful for reducing the number of reads and
-//! writes to the disk, pages that are frequently used can be kept in memory.
+//!        writes to the disk, pages that are frequently used can be kept in memory.
 class PageCache {
 public:
   //! \brief Construct a new page cache with a prescribed cache size operating over a particular data access
-  //! layer.
+  //!        layer.
   PageCache(const std::filesystem::path& wal_directory,
             std::size_t cache_size,
             DataAccessLayer* data_access_layer);
@@ -34,11 +34,6 @@ public:
 
   //! \brief Release a page back to the page cache.
   void ReleasePage(page_number_t page_number);
-
-  //! \brief Flush a page to the disk.
-  //! TODO(Nate): I am using this to transition towards using the page cache. I am not sure if it will be allowed in
-  //!     the final version, at least as a public member.
-  void FlushPage(const Page& page);
 
   //! \brief Indicates that data has been written to the page in a particular slot.
   void SetDirty(std::size_t slot);
@@ -101,6 +96,9 @@ private:
       flags = 0;
     }
   };
+
+  //! \brief Flush a page to the disk.
+  void flushPage(const Page& page);
 
   //! \brief Get a free slot in the cache in which to store a page.
   std::size_t getSlot();

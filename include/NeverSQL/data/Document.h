@@ -52,7 +52,8 @@ private:
   template<typename T, typename D>
   void addEntry(const std::string& name, T&& data) {
     if constexpr (std::is_same_v<D, char*>) {
-      fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<std::string>(), .data = std::string(data)});
+      fields_.emplace_back(
+          Field {.name = name, .type = GetDataTypeEnum<std::string>(), .data = std::string(data)});
     }
     else {
       fields_.emplace_back(Field {.name = name, .type = GetDataTypeEnum<T>(), .data = std::forward<T>(data)});
@@ -91,6 +92,29 @@ public:
         fields_, [&field_name](const auto& field) { return field.field_name == field_name; });
     NOSQL_REQUIRE(it != fields_.end(), "field '" << field_name << "' not found");
     return GetEntryAs<T>(std::distance(fields_.begin(), it));
+  }
+
+  template<typename T>
+  NO_DISCARD std::optional<T> TryGetAs(std::size_t index) const {
+    if (fields_.size() <= index || fields_[index].type != GetDataTypeEnum<T>()) {
+      return {};
+    }
+    if constexpr (!std::is_same_v<T, std::string>) {
+      T out;
+      std::memcpy(&out, fields_[index].data.data(), sizeof(T));
+      return out;
+    }
+    else {
+      return std::string(reinterpret_cast<const char*>(fields_[index].data.data()),
+                         fields_[index].data.size());
+    }
+  }
+
+  template<typename T>
+  NO_DISCARD std::optional<T> TryGetAs(const std::string& field_name) const {
+    auto it = std::ranges::find_if(
+        fields_, [&field_name](const auto& field) { return field.field_name == field_name; });
+    return TryGetAs<T>(std::distance(fields_.begin(), it));
   }
 
 private:

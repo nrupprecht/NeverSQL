@@ -73,13 +73,13 @@ void PageCache::ReleasePage(page_number_t page_number) {
   }
 }
 
-void PageCache::FlushPage(const Page& page) {
-  LOG_SEV(Debug) << "Flushing page " << page.GetPageNumber() << ".";
-  data_access_layer_->WriteBackPage(page);
-}
-
 void PageCache::SetDirty(std::size_t slot) {
   page_descriptors_[slot].SetIsDirty(true);
+}
+
+void PageCache::flushPage(const Page& page) {
+  LOG_SEV(Debug) << "Flushing page " << page.GetPageNumber() << ".";
+  data_access_layer_->WriteBackPage(page);
 }
 
 std::size_t PageCache::getSlot() {
@@ -194,7 +194,7 @@ bool PageCache::tryReleasePage(std::size_t slot) {
     page->SetPageNumber(page_number);
 
     if (descriptor.IsDirty()) {
-      FlushPage(*page);
+      flushPage(*page);
     }
   }
   // Reset flags.
