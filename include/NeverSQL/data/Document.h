@@ -105,11 +105,27 @@ private:
     buffer = buffer.subspan(sizeof(Integral_t));
   }
 
-  void printToStream(std::ostream& out, [[maybe_unused]] std::size_t indent) const override {
-    out << value_;
-  }
+  void printToStream(std::ostream& out, [[maybe_unused]] std::size_t indent) const override { out << value_; }
 
   Integral_t value_ {};
+};
+
+class BooleanValue final : public DocumentValue {
+public:
+  BooleanValue();
+  explicit BooleanValue(bool value);
+
+  bool GetValue() const noexcept;
+
+private:
+  std::any getData() const override;
+
+  void writeData(lightning::memory::BasicMemoryBuffer<std::byte>& buffer) const override;
+  std::size_t calculateRequiredDataSize() const override;
+  void initializeFromBuffer(std::span<const std::byte>& buffer) override;
+  void printToStream(std::ostream& out, std::size_t indent) const override;
+
+  bool value_ {};
 };
 
 //! \brief Document value representing a string.

@@ -4,6 +4,8 @@
 
 #include "NeverSQL/data/Document.h"
 
+using namespace std::string_view_literals;
+
 namespace neversql {
 
 namespace {
@@ -19,7 +21,7 @@ std::unique_ptr<DocumentValue> makeDocumentValue(DataTypeEnum data_type) {
     // case DataTypeEnum::Double:
     //   return std::make_unique<IntegralValue<double>>();
     case DataTypeEnum::Boolean:
-      return std::make_unique<IntegralValue<bool>>();
+      return std::make_unique<BooleanValue>();
     // case DataTypeEnum::DateTime:
     //   return std::make_unique<IntegralValue<DateTime>>();
     case DataTypeEnum::String:
@@ -100,7 +102,44 @@ void DoubleValue::initializeFromBuffer(std::span<const std::byte>& buffer) {
 }
 
 void DoubleValue::printToStream(std::ostream& out, [[maybe_unused]] std::size_t indent) const {
-  out << "\"" << value_ << "\"";
+  out << value_;
+}
+
+// ===========================================================================================================
+//  BooleanValue
+// ===========================================================================================================
+
+BooleanValue::BooleanValue()
+    : DocumentValue(DataTypeEnum::Boolean) {}
+
+BooleanValue::BooleanValue(bool value)
+    : DocumentValue(DataTypeEnum::Boolean)
+    , value_(value) {}
+
+bool BooleanValue::GetValue() const noexcept {
+  return value_;
+}
+
+std::any BooleanValue::getData() const {
+  return value_;
+}
+
+void BooleanValue::writeData(lightning::memory::BasicMemoryBuffer<std::byte>& buffer) const {
+  // Write the data to the buffer.
+  buffer.Append(internal::SpanValue(value_));
+}
+
+std::size_t BooleanValue::calculateRequiredDataSize() const {
+  return 1;
+}
+
+void BooleanValue::initializeFromBuffer(std::span<const std::byte>& buffer) {
+  std::memcpy(&value_, buffer.data(), 1);
+  buffer = buffer.subspan(1);
+}
+
+void BooleanValue::printToStream(std::ostream& out, [[maybe_unused]] std::size_t indent) const {
+  out << (value_ ? "true"sv : "false"sv);
 }
 
 // ===========================================================================================================
@@ -143,7 +182,7 @@ void StringValue::initializeFromBuffer(std::span<const std::byte>& buffer) {
 }
 
 void StringValue::printToStream(std::ostream& out, [[maybe_unused]] std::size_t indent) const {
-  out << "\"" << value_ << "\"";
+  out << lightning::formatting::Format("{:?}", value_);
 }
 
 // ===========================================================================================================
@@ -209,11 +248,11 @@ void ArrayValue::initializeFromBuffer(std::span<const std::byte>& buffer) {
 void ArrayValue::printToStream(std::ostream& out, std::size_t indent) const {
   out << "[\n";
   for (const auto& value : values_) {
-    out << std::string(indent + 2, ' ');
+    std::ranges::fill_n(std::ostream_iterator<char>(out), static_cast<long>(indent) + 2, ' ');
     value->PrintToStream(out);
     out << ",\n";
   }
-  out << std::string(indent, ' ');
+  std::ranges::fill_n(std::ostream_iterator<char>(out), static_cast<long>(indent), ' ');
   out << "]";
 }
 
@@ -310,12 +349,12 @@ void Document::initializeFromBuffer(std::span<const std::byte>& buffer) {
 void Document::printToStream(std::ostream& out, std::size_t indent) const {
   out << "{\n";
   for (const auto& [name, value] : elements_) {
-    out << std::string(indent + 2, ' ');
-    out << name << ": ";
+    std::ranges::fill_n(std::ostream_iterator<char>(out), static_cast<long>(indent) + 2, ' ');
+    out << lightning::formatting::Format("{:?}", name) << ": ";
     value->PrintToStream(out, indent + 2);
     out << ",\n";
   }
-  out << std::string(indent, ' ');
+  std::ranges::fill_n(std::ostream_iterator<char>(out), static_cast<long>(indent), ' ');
   out << "}";
 }
 

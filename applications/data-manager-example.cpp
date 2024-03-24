@@ -10,8 +10,8 @@
 #include "NeverSQL/utility/HexDump.h"
 #include "NeverSQL/utility/PageDump.h"
 
-using neversql::primary_key_t;
 using namespace lightning;
+using namespace neversql;
 
 void SetupLogger(Severity min_severity = Severity::Info);
 
@@ -41,10 +41,10 @@ int main() {
   try {
     for (; pk < num_to_insert; ++pk) {
       // Create a document.
-      neversql::DocumentBuilder builder;
-      builder.AddEntry("data", formatting::Format("Brave new world.\nEntry number {}.", pk));
-      builder.AddEntry("pk", static_cast<int>(pk));
-      builder.AddEntry("is_even", pk % 2 == 0);
+      neversql::Document builder;
+      builder.AddElement("data", StringValue{formatting::Format("Brave new world.\nEntry number {}.", pk)});
+      builder.AddElement("pk", IntegralValue{static_cast<int32_t>(pk)});
+      builder.AddElement("is_even", BooleanValue{pk % 2 == 0});
       // Add the document.
       manager.AddValue("elements", builder);
 
@@ -91,14 +91,14 @@ int main() {
       auto& view = result.value_view;
 
       // Interpret the data as a document.
-      neversql::DocumentReader reader(view);
+      auto document = neversql::ReadDocumentFromBuffer(view);
 
       LOG_SEV(Info) << formatting::Format(
           "Found key {:L} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",
           pk_probe,
           result.search_result.node->GetPageNumber(),
           result.search_result.GetSearchDepth(),
-          neversql::PrettyPrint(reader));
+          neversql::PrettyPrint(*document));
     }
     else {
       LOG_SEV(Info) << formatting::Format("{@BRED}Key {} was not found.{@RESET}", pk_probe);
