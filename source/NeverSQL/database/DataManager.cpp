@@ -30,13 +30,13 @@ DataManager::DataManager(const std::filesystem::path& database_path)
     LOG_SEV(Trace) << "Loaded collection index from page " << meta.GetIndexPage() << ".";
 
     collection_index_ = std::make_unique<BTreeManager>(meta.GetIndexPage(), page_cache_);
-    std::size_t num_collections{};
+    std::size_t num_collections {};
     for (auto it : *collection_index_) {
       // Interpret the data as a document.
-      DocumentReader reader(it);
+      auto document = ReadDocumentFromBuffer(it);
 
-      auto collection_name = reader.GetEntryAs<std::string>("collection_name");
-      auto page_number = reader.GetEntryAs<page_number_t>("index_page_number");
+      auto collection_name = document->TryGetAs<std::string>("collection_name").value();
+      auto page_number = document->TryGetAs<page_number_t>("index_page_number").value();
 
       LOG_SEV(Debug) << "Loaded collection named '" << collection_name << "' with index page " << page_number
                      << ".";
@@ -53,9 +53,9 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
 
   auto page_number = btree->GetRootPageNumber();
 
-  neversql::DocumentBuilder document;
-  document.AddEntry("collection_name", collection_name);
-  document.AddEntry("index_page_number", page_number);
+  neversql::Document document;
+  document.AddElement("collection_name", StringValue {collection_name});
+  document.AddElement("index_page_number", IntegralValue {page_number});
 
   //  NOTE: This is not the best way to do this, I just want to get something that works.
   [[maybe_unused]] auto size = document.CalculateRequiredSize();
@@ -79,14 +79,13 @@ void DataManager::AddValue(const std::string& collection_name,
   it->second->AddValue(key, value);
 }
 
-void DataManager::AddValue(const std::string& collection_name,
-                           GeneralKey key,
-                           const DocumentBuilder& document) {
+void DataManager::AddValue(const std::string& collection_name, GeneralKey key, const Document& document) {
   // Serialize the document and add it to the database.
   [[maybe_unused]] auto size = document.CalculateRequiredSize();
   lightning::memory::MemoryBuffer<std::byte> buffer;
 
-  WriteToBuffer(buffer, document);
+  document.WriteToBuffer(buffer);
+  // WriteToBuffer(buffer, document);
   std::span<const std::byte> value(buffer.Data(), buffer.Size());
   AddValue(collection_name, key, value);
 }
@@ -135,7 +134,7 @@ void DataManager::AddValue(const std::string& collection_name, std::span<const s
   it->second->AddValue(value);
 }
 
-void DataManager::AddValue(const std::string& collection_name, const DocumentBuilder& document) {
+void DataManager::AddValue(const std::string& collection_name, const Document& document) {
   // Serialize the document and add it to the database.
   // TODO: Deal with documents that are too long.
   //  NOTE: This is not the best way to do this, I just want to get something that works.

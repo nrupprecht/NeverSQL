@@ -17,7 +17,7 @@ class Condition : public lightning::ImplBase {
 protected:
   class Impl : public lightning::ImplBase::Impl {
   public:
-    virtual bool Test(const DocumentReader& reader) const = 0;
+    virtual bool Test(const Document& reader) const = 0;
     virtual std::shared_ptr<Impl> Copy() const = 0;
   };
 
@@ -25,7 +25,7 @@ protected:
       : lightning::ImplBase(impl) {}
 
 public:
-  bool operator()(const DocumentReader& reader) const { return impl<Condition>()->Test(reader); }
+  bool operator()(const Document& reader) const { return impl<Condition>()->Test(reader); }
   Condition Copy() const { return Condition(impl<Condition>()->Copy()); }
 };
 
@@ -40,7 +40,7 @@ protected:
         : field_name_(std::move(field_name))
         , value_(value) {}
 
-    bool Test(const DocumentReader& reader) const override {
+    bool Test(const Document& reader) const override {
       if (auto field_value = reader.TryGetAs<Data_t>(field_name_)) {
         return Predicate_t {}(*field_value, value_);
       }
@@ -111,8 +111,8 @@ private:
   void advance() {
     // Find the next valid iterator.
     for (; !iterator_.IsEnd(); ++iterator_) {
-      DocumentReader reader(*iterator_);
-      if (condition_(reader)) {
+      auto document = ReadDocumentFromBuffer(*iterator_);
+      if (condition_(*document)) {
         return;
       }
     }

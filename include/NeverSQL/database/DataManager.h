@@ -16,7 +16,7 @@ namespace neversql {
 struct RetrievalResult {
   SearchResult search_result;
   page_size_t cell_offset {};
-  std::span<const std::byte> value_view {};
+  std::span<const std::byte> value_view;
 
   bool IsFound() const noexcept { return search_result.node.has_value(); }
 };
@@ -36,7 +36,7 @@ public:
 
   void AddValue(const std::string& collection_name, GeneralKey key, std::span<const std::byte> value);
 
-  void AddValue(const std::string& collection_name, GeneralKey key, const DocumentBuilder& document);
+  void AddValue(const std::string& collection_name, GeneralKey key, const Document& document);
 
   //! \brief Get a search result for a given key.
   SearchResult Search(const std::string& collection_name, GeneralKey key) const;
@@ -55,7 +55,7 @@ public:
   void AddValue(const std::string& collection_name, std::span<const std::byte> value);
 
   //! \brief Add a document to the database.
-  void AddValue(const std::string& collection_name, const DocumentBuilder& document);
+  void AddValue(const std::string& collection_name, const Document& document);
 
   //! \brief Get a search result for a given key.
   SearchResult Search(const std::string& collection_name, primary_key_t key) const;
