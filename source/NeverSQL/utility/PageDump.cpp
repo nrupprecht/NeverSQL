@@ -5,6 +5,7 @@
 #include "NeverSQL/utility/PageDump.h"
 // Other files.
 #include <numeric>
+#include <format>
 
 #include "NeverSQL/data/internals/KeyPrinting.h"
 #include "NeverSQL/utility/DisplayTable.h"
