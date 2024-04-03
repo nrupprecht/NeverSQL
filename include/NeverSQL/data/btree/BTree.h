@@ -13,8 +13,9 @@
 #include "NeverSQL/containers/FixedStack.h"
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
-#include "NeverSQL/data/internals/KeyComparison.h"
+#include "NeverSQL/data/btree/EntryCreator.h"
 #include "NeverSQL/utility/DataTypes.h"
+#include "NeverSQL/data/internals/DatabaseEntry.h"
 
 namespace neversql {
 
@@ -28,22 +29,33 @@ using TreePosition = FixedStack<std::pair<page_number_t, page_size_t>>;
 //! Includes the search path (in pages) that was taken, along with the node that was found.
 struct SearchResult {
   TreePosition path;
-  std::optional<BTreeNodeMap> node {};
+  std::optional<BTreeNodeMap> node;
 
   //! \brief Get how many layers had to be searched to find the node.
   std::size_t GetSearchDepth() const noexcept { return path.Size(); }
+
+  bool IsFound() const noexcept { return node.has_value(); }
+};
+
+//! \brief Structure that represents data on retrieving data from the data manager.
+struct RetrievalResult {
+  SearchResult search_result;
+
+  std::unique_ptr<internal::DatabaseEntry> entry;
+
+  bool IsFound() const noexcept { return search_result.IsFound(); }
 };
 
 //! \brief Convenient structure for packing up data to store in a B-tree.
 struct StoreData {
   //! \brief The key is some collection of bytes. It is context dependent how to compare different keys.
-  GeneralKey key {};
+  GeneralKey key;
 
-  //! \brief The payload of the store operation.
-  std::span<const std::byte> serialized_value {};
+  //! \brief Entry creator, which knows how to store the data inside the tree.
+  std::unique_ptr<internal::EntryCreator> entry_creator;
 
-  //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed sizes
-  //!        that is known by the B-tree manager.
+  //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed
+  //!        sizes that is known by the B-tree manager.
   //!
   bool serialize_key_size = false;
 
@@ -74,14 +86,14 @@ public:
   static std::unique_ptr<BTreeManager> CreateNewBTree(PageCache& page_cache, DataTypeEnum key_type);
 
   //! \brief Add a value with a specified key to the BTree.
-  void AddValue(GeneralKey key, std::span<const std::byte> value);
+  void AddValue(GeneralKey key, std::unique_ptr<internal::EntryCreator>&& entry_creator);
 
   //! \brief Add a value with an auto-incrementing key to the B-tree.
   //!
   //! Only works if the B-tree is configured to generate auto-incrementing keys.
   //!
   //! \param value The value payload to add to the B-tree.
-  void AddValue(std::span<const std::byte> value);
+  void AddValue(std::unique_ptr<internal::EntryCreator>&& entry_creator);
 
   //! \brief Get the root page number of the B-tree.
   page_number_t GetRootPageNumber() const noexcept { return root_page_; }
@@ -131,7 +143,14 @@ private:
   //! \brief Initialize the B-tree manager object from the data in its root page.
   void initialize();
 
+  //! \brief Get the next primary key.
   primary_key_t getNextPrimaryKey() const;
+
+  //! \brief Get a new page on which overflow entries can be written.
+  page_number_t getNextOverflowPage();
+
+  //! \brief Get the current overflow page.
+  page_number_t getCurrentOverflowPage() const;
 
   BTreeNodeMap newNodePage(BTreePageType type, page_size_t reserved_space) const;
 
@@ -145,20 +164,23 @@ private:
   bool addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys = true) const;
 
   //! \brief Split a node. This may, recursively, lead to more splits if the split causes the parent node to
-  //! be full.
-  void splitNode(BTreeNodeMap& node, SearchResult& result, std::optional<StoreData> data);
+  //!        be full.
+  void splitNode(BTreeNodeMap& node, SearchResult& result, std::optional<std::reference_wrapper<StoreData>> data);
 
   //! \brief Split a single node, returning the key that was split on and the nodes.
-  SplitPage splitSingleNode(BTreeNodeMap& node, std::optional<StoreData> data);
+  SplitPage splitSingleNode(BTreeNodeMap& node, std::optional<std::reference_wrapper<StoreData>> data);
 
   //! \brief Special case for splitting the root node, which causes the height of the tree to increase by one.
-  void splitRoot(std::optional<StoreData> data);
+  void splitRoot(std::optional<std::reference_wrapper<StoreData>> data);
 
   //! \brief Vacuums the node, removing any fragmented space.
   void vacuum(BTreeNodeMap& node) const;
 
   //! \brief Look for the leaf node where a key should be inserted or can be found.
   SearchResult search(GeneralKey key) const;
+
+  //! \brief Try to retrieve data from a B-tree.
+  RetrievalResult retrieve(GeneralKey key) const;
 
   //! \brief Checks if the key is less than or equal to the other key.
   //!
@@ -170,7 +192,7 @@ private:
   //! Uses the debug_key_func_ if it is available, otherwise, string-ize the bytes.
   //!
   //! \param key The key to convert to a string.
-  //! \return string representation of the key, implementation defined.
+  //! \return Returns a string representation of the key, implementation defined.
   std::string debugKey(GeneralKey key) const;
 
   // =================================================================================================
@@ -183,6 +205,9 @@ private:
   //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
   //!
   page_number_t root_page_ {};
+
+  //! \brief The current page available for overflow entries. Zero if no page is being used.
+  page_number_t current_overflow_page_number_ {};
 
   //! \brief Whether the key's size needs to be serialized. TODO: Get this from the key type.
   bool serialize_key_size_ = false;
@@ -198,6 +223,9 @@ private:
 
   //! \brief The maximum entry size, in bytes, before an overflow page is needed
   page_size_t max_entry_size_ = 256;
+
+  //! \brief The minimum amount of space, in bytes, to have to allow an entry to be added to a page.
+  page_size_t min_space_for_entry_ = 128;
 
   //! \brief The maximum number of entries per page.
   //! NOTE(Nate): I am adding this for now to make testing easier.

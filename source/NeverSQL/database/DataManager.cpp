@@ -4,6 +4,7 @@
 
 #include "NeverSQL/database/DataManager.h"
 // Other files.
+#include "NeverSQL/data/internals/DocumentPayloadSerializer.h"
 #include "NeverSQL/data/internals/Utility.h"
 #include "NeverSQL/utility/PageDump.h"
 
@@ -11,7 +12,7 @@ namespace neversql {
 
 DataManager::DataManager(const std::filesystem::path& database_path)
     : data_access_layer_(database_path)
-    , page_cache_(database_path / "walfiles", 16 /* Just a random number for now */, &data_access_layer_)
+    , page_cache_(database_path / "walfiles", 256 /* Just a random number for now */, &data_access_layer_)
     , collection_index_(nullptr) {
   // TODO: Make the meta page more independent from the database.
   auto&& meta = data_access_layer_.GetMeta();
@@ -53,41 +54,25 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
 
   auto page_number = btree->GetRootPageNumber();
 
-  neversql::Document document;
-  document.AddElement("collection_name", StringValue {collection_name});
-  document.AddElement("index_page_number", IntegralValue {page_number});
+  auto document = std::make_unique<Document>();
+  document->AddElement("collection_name", StringValue {collection_name});
+  document->AddElement("index_page_number", IntegralValue {page_number});
 
-  //  NOTE: This is not the best way to do this, I just want to get something that works.
-  [[maybe_unused]] auto size = document.CalculateRequiredSize();
-  lightning::memory::MemoryBuffer<std::byte> buffer;
-
-  WriteToBuffer(buffer, document);
-  std::span<const std::byte> value(buffer.Data(), buffer.Size());
-  collection_index_->AddValue(internal::SpanValue(collection_name), value);
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  collection_index_->AddValue(internal::SpanValue(collection_name), std::move(creator));
 
   // Cache the collection in the data manager.
   collections_.emplace(collection_name, std::move(btree));
 }
 
-void DataManager::AddValue(const std::string& collection_name,
-                           GeneralKey key,
-                           std::span<const std::byte> value) {
+void DataManager::AddValue(const std::string& collection_name, GeneralKey key, const Document& document) {
   // Find the collection.
   auto it = collections_.find(collection_name);
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
-  it->second->AddValue(key, value);
-}
 
-void DataManager::AddValue(const std::string& collection_name, GeneralKey key, const Document& document) {
-  // Serialize the document and add it to the database.
-  [[maybe_unused]] auto size = document.CalculateRequiredSize();
-  lightning::memory::MemoryBuffer<std::byte> buffer;
-
-  document.WriteToBuffer(buffer);
-  // WriteToBuffer(buffer, document);
-  std::span<const std::byte> value(buffer.Data(), buffer.Size());
-  AddValue(collection_name, key, value);
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  it->second->AddValue(key, std::move(creator));
 }
 
 SearchResult DataManager::Search(const std::string& collection_name, GeneralKey key) const {
@@ -99,61 +84,30 @@ SearchResult DataManager::Search(const std::string& collection_name, GeneralKey 
 }
 
 RetrievalResult DataManager::Retrieve(const std::string& collection_name, GeneralKey key) const {
-  RetrievalResult result {.search_result = Search(collection_name, key)};
-  if (result.search_result.node) {
-    if (auto offset = *result.search_result.node->getCellByKey(key)) {
-      result.cell_offset = offset;
-      result.value_view = std::get<DataNodeCell>(result.search_result.node->getCell(offset)).SpanValue();
-    }
-    else {
-      // Element *DID NOT EXIST IN THE NODE* that it was expected to exist in.
-      result.search_result.node = {};
-    }
-  }
-  return result;
-}
-
-void DataManager::AddValue(const std::string& collection_name,
-                           primary_key_t key,
-                           std::span<const std::byte> value) {
   // Find the collection.
   auto it = collections_.find(collection_name);
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
-
-  GeneralKey key_span = internal::SpanValue(key);
-  it->second->AddValue(key_span, value);
-}
-
-void DataManager::AddValue(const std::string& collection_name, std::span<const std::byte> value) {
-  // Find the collection.
-  auto it = collections_.find(collection_name);
-  // TODO: Error handling without throwing.
-  NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
-
-  it->second->AddValue(value);
+  return it->second->retrieve(key);
 }
 
 void DataManager::AddValue(const std::string& collection_name, const Document& document) {
-  // Serialize the document and add it to the database.
-  // TODO: Deal with documents that are too long.
-  //  NOTE: This is not the best way to do this, I just want to get something that works.
-  [[maybe_unused]] auto size = document.CalculateRequiredSize();
-  lightning::memory::MemoryBuffer<std::byte> buffer;
+  // Find the collection.
+  auto it = collections_.find(collection_name);
+  // TODO: Error handling without throwing.
+  NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
-  WriteToBuffer(buffer, document);
-  std::span<const std::byte> value(buffer.Data(), buffer.Size());
-  AddValue(collection_name, value);
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  it->second->AddValue(std::move(creator));
 }
 
 SearchResult DataManager::Search(const std::string& collection_name, primary_key_t key) const {
-  GeneralKey key_span = internal::SpanValue(key);
+  const GeneralKey key_span = internal::SpanValue(key);
   return Search(collection_name, key_span);
 }
 
 RetrievalResult DataManager::Retrieve(const std::string& collection_name, primary_key_t key) const {
-  GeneralKey key_span = internal::SpanValue(key);
-
+  const GeneralKey key_span = internal::SpanValue(key);
   return Retrieve(collection_name, key_span);
 }
 
@@ -184,13 +138,13 @@ bool DataManager::HexDumpPage(page_number_t page_number,
   auto page = page_cache_.GetPage(page_number);
   auto view = page->GetView();
   std::istringstream stream(std::string {view});
-  neversql::utility::HexDump(stream, out, options);
+  HexDump(stream, out, options);
   return true;
 }
 
 bool DataManager::NodeDumpPage(page_number_t page_number, std::ostream& out) const {
   if (auto page = collection_index_->loadNodePage(page_number)) {
-    neversql::utility::PageInspector::NodePageDump(*page, out);
+    utility::PageInspector::NodePageDump(*page, out);
     return true;
   }
   return false;

@@ -8,6 +8,7 @@
 #include "NeverSQL/data/btree/BTree.h"
 #include "NeverSQL/data/internals/Utility.h"
 #include "NeverSQL/database/DataManager.h"
+#include "NeverSQL/database/Query.h"
 #include "NeverSQL/utility/HexDump.h"
 #include "NeverSQL/utility/PageDump.h"
 
@@ -20,7 +21,8 @@ int main() {
   SetupLogger(Severity::Info);
 
   // ---> Your database path here.
-  std::filesystem::path database_path = "your-path-here";
+  std::filesystem::path database_path =
+      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-string";
 
   std::filesystem::remove_all(database_path);
 
@@ -106,7 +108,16 @@ int main() {
     auto result = manager.Retrieve("elements", neversql::internal::SpanValue(name));
     if (result.IsFound()) {
       // Interpret the data as a document.
-      auto document = neversql::ReadDocumentFromBuffer(result.value_view);
+
+      memory::MemoryBuffer<std::byte> buffer;
+      auto& entry = *result.entry;
+      do {
+        auto data = entry.GetData();
+        buffer.Append(data);
+      } while (entry.Advance());
+      auto view = std::span {buffer.Data(), buffer.Size()};
+
+      auto document = neversql::ReadDocumentFromBuffer(view);
 
       LOG_SEV(Info) << formatting::Format(
           "Found key {:?} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",

@@ -8,6 +8,7 @@
 
 #include "NeverSQL/data/Page.h"
 #include "NeverSQL/data/btree/BTreePageHeader.h"
+#include "NeverSQL/data/internals/DatabaseEntry.h"
 #include "NeverSQL/data/internals/KeyPrinting.h"
 
 namespace neversql {
@@ -24,9 +25,9 @@ using GeneralKey = std::span<const std::byte>;
 
 //! \brief Helper structure that represents a cell in a leaf node.
 struct DataNodeCell {
+  std::byte flags;
   const std::span<const std::byte> key;
-  const entry_size_t size_of_entry;
-  const std::byte* start_of_value;
+  std::span<const std::byte> data;
 
   bool key_size_is_serialized = false;
 
@@ -35,26 +36,41 @@ struct DataNodeCell {
   // =================================================================================================
 
   //! \brief Get a span of the value in the cell.
-  NO_DISCARD std::span<const std::byte> SpanValue() const noexcept {
-    return std::span<const std::byte>(start_of_value, size_of_entry);
-  }
+  NO_DISCARD std::span<const std::byte> SpanValue() const noexcept { return data; }
 
-  NO_DISCARD page_size_t GetSize() const noexcept {
-    return static_cast<page_size_t>(key.size() + sizeof(entry_size_t) + size_of_entry
+  NO_DISCARD page_size_t GetCellSize() const noexcept {
+    return static_cast<page_size_t>(key.size() + sizeof(entry_size_t) + data.size()
                                     + (key_size_is_serialized ? 2 : 0));
   }
+
+  NO_DISCARD page_size_t GetDataSize() const noexcept { return static_cast<page_size_t>(data.size()); }
 };
 
 //! \brief Helper structure that represents a cell in an internal node.
 struct PointersNodeCell {
+  std::byte flags;
   const std::span<const std::byte> key;
+
+  //! \brief The pointer value.
+  //!
+  //! \note The data of a pointers node cell (the entry) is just the page number.
   const page_number_t page_number;
 
   bool key_size_is_serialized = false;
 
-  NO_DISCARD page_size_t GetSize() const noexcept {
+  NO_DISCARD page_size_t GetCellSize() const noexcept {
     return static_cast<page_size_t>(key.size() + sizeof(page_number_t) + (key_size_is_serialized ? 2 : 0));
   }
+
+  NO_DISCARD static page_size_t GetDataSize() noexcept { return sizeof(page_number_t); }
+};
+
+struct SpaceRequirement {
+  page_size_t pointer_space;
+
+  page_size_t cell_header_space;
+
+  page_size_t max_entry_space;
 };
 
 namespace utility {
@@ -95,6 +111,12 @@ public:
   //! There may be more "fragmented" free space due to cells being erased, this is not counted here.
   //! \return The amount of free space in the node, in the free space section.
   NO_DISCARD page_size_t GetDefragmentedFreeSpace() const;
+
+  //! \brief Calculate the space requirements for adding a new entry to a node, given the key.
+  //!
+  //! This calculates the amount of space needed for the pointer, the cell, and the maximum amount of space
+  //! available for the entry.
+  NO_DISCARD SpaceRequirement CalculateSpaceRequirements(GeneralKey key) const;
 
   //! \brief Get the largest key of any element in the node. If there are no keys, returns nullopt.
   NO_DISCARD std::optional<GeneralKey> GetLargestKey() const;
@@ -142,6 +164,9 @@ private:
 
   //! \brief Get a span of the offsets in the node.
   std::span<const page_size_t> getPointers() const;
+
+  //! \brief Get the offset to the start of the free space in the node.
+  page_size_t getCellOffsetByIndex(page_size_t cell_index) const;
 
   //! \brief Get the primary key from a cell, given the cell offset.
   GeneralKey getKeyForCell(page_size_t cell_offset) const;

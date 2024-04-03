@@ -16,22 +16,22 @@ using namespace neversql;
 void SetupLogger(Severity min_severity = Severity::Info);
 
 int main() {
+  // 0.004311 ms per addition, 233,612 pages, 10,000,000 entries.
   SetupLogger(Severity::Info);
 
   // ---> Your database path here.
-  std::filesystem::path database_path = "path-to-your-directory";
+  std::filesystem::path database_path =
+      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-dmgr-test";
 
+  remove_all(database_path);
 
-  // std::filesystem::remove_all(database_path);
+  primary_key_t num_to_insert = 10'000'000;  // 48
 
-  primary_key_t num_to_insert = 100'000'000;
+  DataManager manager(database_path);
 
-  neversql::DataManager manager(database_path);
+  LOG_SEV(Info) << formatting::Format("Database has {:L} pages.", manager.GetDataAccessLayer().GetNumPages());
 
-  LOG_SEV(Info) << lightning::formatting::Format("Database has {:L} pages.",
-                                                 manager.GetDataAccessLayer().GetNumPages());
-
-  manager.AddCollection("elements", neversql::DataTypeEnum::UInt64);
+  manager.AddCollection("elements", DataTypeEnum::UInt64);
 
   primary_key_t pk = 0;
   auto starting_time_point = std::chrono::high_resolution_clock::now();
@@ -41,10 +41,10 @@ int main() {
   try {
     for (; pk < num_to_insert; ++pk) {
       // Create a document.
-      neversql::Document builder;
-      builder.AddElement("data", StringValue{formatting::Format("Brave new world.\nEntry number {}.", pk)});
-      builder.AddElement("pk", IntegralValue{static_cast<int32_t>(pk)});
-      builder.AddElement("is_even", BooleanValue{pk % 2 == 0});
+      Document builder;
+      builder.AddElement("data", StringValue {formatting::Format("Brave new world.\nEntry number {}.", pk)});
+      builder.AddElement("pk", IntegralValue {static_cast<int32_t>(pk)});
+      builder.AddElement("is_even", BooleanValue {pk % 2 == 0});
       // Add the document.
       manager.AddValue("elements", builder);
 
@@ -79,8 +79,13 @@ int main() {
   LOG_SEV(Major) << lightning::formatting::Format("Database has {:L} pages.", total_pages);
 
   // Node dump the main index page.
-  manager.NodeDumpPage(2, std::cout);
+  manager.NodeDumpPage(3, std::cout);
   std::cout << std::endl;
+  try {
+    manager.NodeDumpPage(4, std::cout);
+    std::cout << std::endl;
+  } catch (...) {
+  }
 
   // Search for some elements.
   auto first_to_probe = num_to_insert / 2;
@@ -88,29 +93,49 @@ int main() {
   for (primary_key_t pk_probe = first_to_probe; pk_probe < last_to_probe; ++pk_probe) {
     auto result = manager.Retrieve("elements", pk_probe);
     if (result.IsFound()) {
-      auto& view = result.value_view;
+      memory::MemoryBuffer<std::byte> buffer;
+
+      auto& entry = *result.entry;
+      do {
+        auto data = entry.GetData();
+        buffer.Append(data);
+      } while (entry.Advance());
+
+      auto view = std::span {buffer.Data(), buffer.Size()};
 
       // Interpret the data as a document.
-      auto document = neversql::ReadDocumentFromBuffer(view);
-
-      LOG_SEV(Info) << formatting::Format(
-          "Found key {:L} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",
-          pk_probe,
-          result.search_result.node->GetPageNumber(),
-          result.search_result.GetSearchDepth(),
-          neversql::PrettyPrint(*document));
+      if (auto document = neversql::ReadDocumentFromBuffer(view)) {
+        LOG_SEV(Info) << formatting::Format(
+            "Found key {:L} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",
+            pk_probe,
+            result.search_result.node->GetPageNumber(),
+            result.search_result.GetSearchDepth(),
+            neversql::PrettyPrint(*document));
+      }
+      else {
+        LOG_SEV(Error) << "Could not read document.";
+      }
     }
     else {
       LOG_SEV(Info) << formatting::Format("{@BRED}Key {} was not found.{@RESET}", pk_probe);
     }
   }
 
+  //  auto it_begin = manager.Begin("elements");
+  //  auto end_it = manager.End("elements");
+  //  for (auto it = it_begin; it != end_it; ++it) {
+  //    auto view = *it;
+  //    // Interpret the data as a document.
+  //    neversql::DocumentReader reader(view);
+  //    LOG_SEV(Info) << formatting::Format("Value: \n{@BYELLOW}{}{@RESET}", neversql::PrettyPrint(reader));
+  //  }
+
   return 0;
 }
 
 void SetupLogger(Severity min_severity) {
   auto console = lightning::NewSink<lightning::StdoutSink>();
-  lightning::Global::GetCore()->AddSink(console);
+  Global::GetCore()->AddSink(console);
   console->SetFilter(min_severity <= LoggingSeverity);
 
   // Formatter for "low levels" of severity displace file and line number.

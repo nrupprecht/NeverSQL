@@ -76,6 +76,45 @@ using GreaterThan = Comparison<Data_t, std::greater<Data_t>>;
 template<typename Data_t>
 using GreaterEqual = Comparison<Data_t, std::greater_equal<Data_t>>;
 
+//! \brief A condition that a document has a field of a certain name. Optionally, the type of the field can be
+//!        checked as well.
+class HasField : public Condition {
+  friend class lightning::ImplBase;
+
+protected:
+  class Impl : public Condition::Impl {
+  public:
+    explicit Impl(std::string field_name, std::optional<DataTypeEnum> type = {})
+        : field_name_(std::move(field_name))
+        , type_(type) {}
+
+    bool Test(const Document& document) const override {
+      if (auto field = document.GetElement(field_name_)) {
+        if (type_) {
+          return field->get().GetDataType() == *type_;
+        }
+        return true;
+      }
+      return false;
+    }
+
+    std::shared_ptr<Condition::Impl> Copy() const override {
+      return std::make_shared<Impl>(field_name_, type_);
+    }
+
+  private:
+    std::string field_name_;
+    std::optional<DataTypeEnum> type_;
+  };
+
+  explicit HasField(const std::shared_ptr<Impl>& impl)
+      : Condition(impl) {}
+
+public:
+  explicit HasField(const std::string& field_name, std::optional<DataTypeEnum> type = {})
+      : Condition(std::make_shared<Impl>(field_name, type)) {}
+};
+
 //! \brief A query iterator. This wraps an ordinary BTreeManager::Iterator and filters the results based on a
 //!        condition. This allows us to iterate though a collection, only counting documents that meet a
 //!        certain condition.

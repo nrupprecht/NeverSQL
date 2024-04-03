@@ -61,6 +61,8 @@ Some useful resources on databases and database implementations:
 * Mongodb
   * https://github.com/mongodb/mongo
   * BSON spec: https://bsonspec.org/, https://bsonspec.org/spec.html
+* WiredTiger
+  * https://source.wiredtiger.com/11.2.0/arch-index.html
 * Other tutorials / similar projects
   * https://cstack.github.io/db_tutorial/
   * https://adambcomer.com/blog/simple-database/motivation-design/

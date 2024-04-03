@@ -12,15 +12,14 @@
 
 namespace neversql::utility {
 
-
 void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
-
   lightning::memory::StringMemoryBuffer buffer;
 
   std::vector<std::size_t> numbers;
   std::vector<page_size_t> offsets;
   std::vector<std::string> cell_types;
   std::vector<GeneralKey> primary_keys;
+  std::vector<std::byte> flags;
   std::vector<entry_size_t> data_size;
   std::vector<std::string> data;
 
@@ -39,16 +38,18 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
           using T = std::decay_t<decltype(cell)>;
           if constexpr (std::is_same_v<T, DataNodeCell>) {
             auto view = cell.SpanValue();
-            std::string_view sv{reinterpret_cast<const char*>(view.data()), view.size()};
+            std::string_view sv {reinterpret_cast<const char*>(view.data()), view.size()};
             cell_types.emplace_back("Data cell");
             primary_keys.push_back(cell.key);
-            data_size.push_back(cell.size_of_entry);
+            flags.push_back(cell.flags);
+            data_size.push_back(cell.GetDataSize());
             data.emplace_back(sv);
           }
           else if constexpr (std::is_same_v<T, PointersNodeCell>) {
             cell_types.emplace_back("Pointer cell");
             primary_keys.push_back(cell.key);
-            data_size.push_back(0);
+            flags.push_back(cell.flags);
+            data_size.push_back(cell.GetDataSize());
             data.push_back(std::to_string(cell.page_number));
           }
           else {
@@ -69,6 +70,13 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
 
   table.AddColumn(
       "PK", primary_keys, [](const GeneralKey& pk) { return internal::HexDumpBytes(pk); }, "BLUE", "BBLUE");
+
+  table.AddColumn(
+      "Flags",
+      flags,
+      [](const std::byte& flag) { return std::format("0b{:b}", static_cast<uint8_t>(flag)); },
+      "BWHITE",
+      "BBLUE");
 
   table.AddColumn(
       "Data size",
@@ -95,7 +103,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   // Write header above the table, using the same width.
 
   auto header_width = table.GetTotalWidth();
-  { // Write HEADER
+  {  // Write HEADER
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');
     std::string fmt_string = "\n|{@BWHITE}{:^" + std::to_string(header_width - 2) + "}{@RESET}|\n";
     out << lightning::formatting::Format(fmt_string, "HEADER");
@@ -115,16 +123,21 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   out << lightning::formatting::Format("|  {:<20}{@BBLUE}{}{@RESET}\n", "Flags:", buffer.MoveString());
   buffer.Clear();
 
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.GetFreeStart());
+  out << lightning::formatting::Format(
+      "|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.GetFreeStart());
   out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free end:", header.GetFreeEnd());
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.GetReservedStart());
-  out << lightning::formatting::Format("|  {:<20}{@BGREEN}{}{@RESET}\n", "Page number:", header.GetPageNumber());
-  out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Additional data:", header.GetAdditionalData());
+  out << lightning::formatting::Format(
+      "|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.GetReservedStart());
+  out << lightning::formatting::Format(
+      "|  {:<20}{@BGREEN}{}{@RESET}\n", "Page number:", header.GetPageNumber());
+  out << lightning::formatting::Format(
+      "|  {:<20}{@BWHITE}{}{@RESET}\n", "Additional data:", header.GetAdditionalData());
 
   out << "|\n|\n";
   out << "|  Hex dump of header:\n";
   out << lightning::formatting::Format(
-      "|  {@BYELLOW}{}{@RESET}\n", internal::HexDumpBytes(node.GetPage().GetSpan(0, header.GetPointersStart()), false));
+      "|  {@BYELLOW}{}{@RESET}\n",
+      internal::HexDumpBytes(node.GetPage().GetSpan(0, header.GetPointersStart()), false));
 
   {
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');

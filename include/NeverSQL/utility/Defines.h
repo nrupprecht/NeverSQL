@@ -5,7 +5,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cstddef>  // std::byte
 #include <span>
 
 #include <Lightning/Lightning.h>

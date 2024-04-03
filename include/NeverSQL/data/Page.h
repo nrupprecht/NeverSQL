@@ -47,7 +47,7 @@ public:
   template<typename T>
     requires std::is_trivially_copyable_v<T>
   page_size_t WriteToPage(page_size_t offset, const T& data) {
-    std::span<const std::byte> view(reinterpret_cast<const std::byte*>(&data), sizeof(T));
+    std::span view(reinterpret_cast<const std::byte*>(&data), sizeof(T));
     return WriteToPage(offset, view);
   }
 

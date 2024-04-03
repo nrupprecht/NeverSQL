@@ -3,6 +3,8 @@
 //
 
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
+
+#include <NeverSQL/data/btree/EntryCreator.h>
 // Other files.
 
 namespace neversql {
@@ -40,6 +42,30 @@ page_size_t BTreeNodeMap::GetDefragmentedFreeSpace() const {
   return getHeader().GetDefragmentedFreeSpace();
 }
 
+SpaceRequirement BTreeNodeMap::CalculateSpaceRequirements(GeneralKey key) const {
+  SpaceRequirement requirement;
+
+  auto&& header = getHeader();
+
+  // Amount of space needed for the pointer.
+  auto pointer_space = sizeof(page_size_t);
+  // Calculate amount of space for the cell.
+  // [Flags: 1 byte] [Key size: 2 bytes]? [Key: 8 bytes | variable]
+  auto cell_header_space = sizeof(uint8_t) + key.size();
+  if (header.AreKeySizesSpecified()) {
+    cell_header_space += sizeof(uint16_t);
+  }
+
+  // Given the current free space and the space needed for the pointer and the other parts of the cell, what
+  // is the maximum amount of space available for the entry (not counting any page entry space restrictions).
+  requirement.max_entry_space = static_cast<page_size_t>(header.GetDefragmentedFreeSpace() - pointer_space - cell_header_space);
+  requirement.pointer_space = pointer_space;
+  requirement.cell_header_space = cell_header_space;
+
+  return requirement;
+}
+
+
 std::optional<GeneralKey> BTreeNodeMap::GetLargestKey() const {
   if (auto&& pointers = getPointers(); !pointers.empty()) {
     return getKeyForCell(pointers.back());
@@ -65,11 +91,12 @@ BTreePageHeader BTreeNodeMap::getHeader() const {
 std::optional<page_size_t> BTreeNodeMap::getCellByKey(GeneralKey key) const {
   std::span<const page_size_t> pointers = getPointers();
 
-  // Note: there was an issue trying to point in the span directly as the second argument, so I am using a placeholder
-  // value (0) and just using the compare function directly, ignoring its second argument (0).
-  auto it = std::ranges::lower_bound(pointers, 0 /* unused */, [this, key](page_size_t ptr, [[maybe_unused]] int) {
-    return cmp_(getKeyForCell(ptr), key);
-  });
+  // Note: there was an issue trying to point in the span directly as the second argument, so I am using a
+  // placeholder value (0) and just using the compare function directly, ignoring its second argument (0).
+  auto it =
+      std::ranges::lower_bound(pointers, 0 /* unused */, [this, key](page_size_t ptr, [[maybe_unused]] int) {
+        return cmp_(getKeyForCell(ptr), key);
+      });
   if (it == pointers.end()) {
     return std::nullopt;
   }
@@ -81,14 +108,14 @@ std::optional<page_size_t> BTreeNodeMap::getCellByKey(GeneralKey key) const {
   return {};
 }
 
-std::optional<std::pair<page_size_t, page_index_t>> BTreeNodeMap::getCellLowerBoundByPK(GeneralKey key) const {
+std::optional<std::pair<page_size_t, page_index_t>> BTreeNodeMap::getCellLowerBoundByPK(
+    GeneralKey key) const {
   std::span<const page_size_t> pointers = getPointers();
-  auto it = std::ranges::lower_bound(
-      pointers, key, cmp_, [this](auto&& ptr) { return getKeyForCell(ptr); });
+  auto it = std::ranges::lower_bound(pointers, key, cmp_, [this](auto&& ptr) { return getKeyForCell(ptr); });
   if (it == pointers.end()) {
     return {};
   }
-  return std::make_optional(std::pair{*it, static_cast<page_index_t>(std::distance(pointers.begin(), it))});
+  return std::make_optional(std::pair {*it, static_cast<page_index_t>(std::distance(pointers.begin(), it))});
 }
 
 std::pair<page_number_t, page_index_t> BTreeNodeMap::searchForNextPageInPointersPage(GeneralKey key) const {
@@ -110,10 +137,11 @@ std::pair<page_number_t, page_index_t> BTreeNodeMap::searchForNextPageInPointers
   }
   // Get the offset to the first key that is greater
   auto offset = getCellLowerBoundByPK(key);
-  NOSQL_ASSERT(offset.has_value(), "could not find a cell with a key greater than or equal to " << debugKey(key));
-  // Offset gets us to the primary key, so we need to add the size of the primary key to get to the page
-  // number.
-  return {page_->Read<primary_key_t>(offset->first + sizeof(primary_key_t)), offset->second};
+  NOSQL_ASSERT(offset.has_value(),
+               "could not find a cell with a key greater than or equal to " << debugKey(key));
+
+  auto pointer_cell = std::get<PointersNodeCell>(getCell(offset->first));
+  return {pointer_cell.page_number, offset->second};
 }
 
 std::span<const page_size_t> BTreeNodeMap::getPointers() const {
@@ -124,13 +152,22 @@ std::span<const page_size_t> BTreeNodeMap::getPointers() const {
   return page_->GetSpan<const page_size_t>(start_ptrs, num_pointers);
 }
 
+page_size_t BTreeNodeMap::getCellOffsetByIndex(page_size_t cell_index) const {
+  auto&& pointers = getPointers();
+  NOSQL_ASSERT(cell_index < pointers.size(), "cell number " << cell_index << " is out of range");
+  return pointers[cell_index];
+}
+
 GeneralKey BTreeNodeMap::getKeyForCell(page_size_t cell_offset) const {
+  // Bypass flags.
+  cell_offset += 1;
+
   if (getHeader().AreKeySizesSpecified()) {
     auto key_size = page_->Read<uint16_t>(cell_offset);
     return page_->GetSpan(cell_offset + sizeof(uint16_t), key_size);
   }
   // TODO: For now at least, assume that keys whose size are not specified are uint64_t. This can be relaxed
-  //  later.
+  // later.
   return page_->GetSpan(cell_offset, sizeof(primary_key_t));
 }
 
@@ -141,32 +178,66 @@ GeneralKey BTreeNodeMap::getKeyForNthCell(page_size_t cell_index) const {
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t cell_offset) const {
-  const auto& header = getHeader();
-  auto key_size_is_serialized = header.AreKeySizesSpecified();
+  // Single page entry.
+  // [flags: 1 byte]
+  // [key_size: 2 bytes]?
+  // [key: 8 bytes | variable]
+  // ---- Entry -------------------
+  // [entry_size: 2 bytes]
+  // [entry_data: entry_size bytes]
+
+  // Overflow entry header.
+  // [flags: 1 byte]
+  // [key_size: 2 bytes]?
+  // [key: 8 bytes | variable]
+  // ---- Entry -------------------
+  // [overflow_key: 8 bytes]
+  // [overflow page number: 8 bytes]
+
   std::span<const std::byte> key;
 
-  auto post_key_offset = cell_offset;
+  auto entry_offset = cell_offset;
+
+  // Flags.
+  const auto flags = page_->Read<std::byte>(entry_offset);
+  entry_offset += 1;
+  // ==== Read the flags ====
+  const bool is_active = internal::GetIsActive(flags);
+  NOSQL_ASSERT(is_active, "cannot load entry, entry is inactive");
+  const bool is_single_page = internal::GetIsSinglePageEntry(flags);
+  const bool key_size_is_serialized = internal::GetKeySizeIsSerialized(flags);
+  const bool is_note_flag_true = internal::IsNoteFlagTrue(flags);
+  // ========================
+
   if (key_size_is_serialized) {
-    auto key_size = page_->Read<uint16_t>(cell_offset);
-    post_key_offset += sizeof(uint16_t) + key_size;
-    key = page_->GetSpan(cell_offset + sizeof(uint16_t), key_size);
+    const auto key_size = page_->Read<uint16_t>(entry_offset);
+    entry_offset += sizeof(uint16_t);
+    key = page_->GetSpan(entry_offset, key_size);
+    entry_offset += key_size;
   }
   else {
-    // TODO: For now at least, assume that keys whose size are not specified are uint64_t. This can be relaxed later.
-    post_key_offset += sizeof(primary_key_t);
-    key = page_->GetSpan(cell_offset, sizeof(primary_key_t));
+    // TODO: For now at least, assume that keys whose size are not specified are uint64_t.
+    //   This can be relaxed later.
+    key = page_->GetSpan(entry_offset, sizeof(primary_key_t));
+    entry_offset += sizeof(primary_key_t);
   }
 
   if (getHeader().IsPointersPage()) {
     return PointersNodeCell {.key = key,
-                             .page_number = page_->Read<page_number_t>(post_key_offset),
+                             .page_number = page_->Read<page_number_t>(entry_offset),
                              .key_size_is_serialized = key_size_is_serialized};
   }
+
+  // If this is an overflow header, it is 16 bytes. Otherwise, the size of the entry is stored in the next 2
+  // bytes.
+  const auto potential_entry_size = page_->Read<page_size_t>(entry_offset);
+  const auto entry_data = is_single_page
+      ? page_->ReadFromPage(entry_offset + (is_note_flag_true ? sizeof(page_size_t) : 0),
+                            potential_entry_size)
+      : page_->ReadFromPage(entry_offset, 16);
+
   return DataNodeCell {
-      .key = key,
-      .size_of_entry = page_->Read<entry_size_t>(post_key_offset),
-      .start_of_value = page_->GetData() + post_key_offset + sizeof(entry_size_t),
-      .key_size_is_serialized = key_size_is_serialized};
+      .flags = flags, .key = key, .data = entry_data, .key_size_is_serialized = key_size_is_serialized};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {

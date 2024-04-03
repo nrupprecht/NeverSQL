@@ -7,19 +7,9 @@
 #include "NeverSQL/data/Document.h"
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTree.h"
-#include "NeverSQL/database/Query.h"
 #include "NeverSQL/utility/HexDump.h"
 
 namespace neversql {
-
-//! \brief Structure that represents data on retrieving data from the data manager.
-struct RetrievalResult {
-  SearchResult search_result;
-  page_size_t cell_offset {};
-  std::span<const std::byte> value_view;
-
-  bool IsFound() const noexcept { return search_result.node.has_value(); }
-};
 
 //! \brief Object that manages the data in the database, e.g. setting up B-trees and indices within the
 //!        database.
@@ -34,7 +24,7 @@ public:
   //  General key methods
   // ========================================
 
-  void AddValue(const std::string& collection_name, GeneralKey key, std::span<const std::byte> value);
+  // void AddValue(const std::string& collection_name, GeneralKey key, std::span<const std::byte> value);
 
   void AddValue(const std::string& collection_name, GeneralKey key, const Document& document);
 
@@ -49,10 +39,10 @@ public:
   // ========================================
 
   //! \brief Add a value to the database.
-  void AddValue(const std::string& collection_name, primary_key_t key, std::span<const std::byte> value);
+  // void AddValue(const std::string& collection_name, primary_key_t key, std::span<const std::byte> value);
 
   //! \brief Add a value to the database using an auto incrementing key.
-  void AddValue(const std::string& collection_name, std::span<const std::byte> value);
+  // void AddValue(const std::string& collection_name, std::span<const std::byte> value);
 
   //! \brief Add a document to the database.
   void AddValue(const std::string& collection_name, const Document& document);
@@ -90,8 +80,10 @@ private:
   //! \brief The data access layer for the database.
   DataAccessLayer data_access_layer_;
 
+  //! \brief The page cache for the database.
   mutable PageCache page_cache_;
 
+  //! \brief Cache the collection index.
   std::unique_ptr<BTreeManager> collection_index_;
 
   //! \brief Cache the collections that are in the database.

@@ -8,13 +8,13 @@
 
 namespace neversql::internal {
 
-template<typename T> requires std::is_trivially_copyable_v<T>
-std::span<const std::byte> SpanValue(const T& value) noexcept {
-  return std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(T));
+template<typename Value_t> requires std::is_trivially_copyable_v<Value_t>
+std::span<const std::byte> SpanValue(const Value_t& value) noexcept {
+  return std::span(reinterpret_cast<const std::byte*>(&value), sizeof(Value_t));
 }
 
 inline std::span<const std::byte> SpanValue(const std::string& value) noexcept {
-  return std::span<const std::byte>(reinterpret_cast<const std::byte*>(value.data()), value.size());
+  return std::span(reinterpret_cast<const std::byte*>(value.data()), value.size());
 }
 
 }  // namespace neversql::internal
