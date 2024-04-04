@@ -5,7 +5,6 @@
 #include "NeverSQL/utility/PageDump.h"
 // Other files.
 #include <numeric>
-#include <format>
 
 #include "NeverSQL/data/internals/KeyPrinting.h"
 #include "NeverSQL/utility/DisplayTable.h"
@@ -75,7 +74,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   table.AddColumn(
       "Flags",
       flags,
-      [](const std::byte& flag) { return std::format("0b{:b}", static_cast<uint8_t>(flag)); },
+      [](const std::byte& flag) { return lightning::formatting::Format("{:b}", static_cast<uint8_t>(flag)); },
       "BWHITE",
       "BBLUE");
 
