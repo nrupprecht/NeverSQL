@@ -44,7 +44,7 @@ std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
   const bool is_single_page = GetIsSinglePageEntry(flags);
   const bool key_size_serialized = GetKeySizeIsSerialized(flags);
 
-  auto entry_offset = starting_offset + 1;  // Skip the flags.
+  auto entry_offset = static_cast<page_size_t>(starting_offset + 1);  // Skip the flags.
   if (key_size_serialized) {
     const auto key_size = page->Read<page_size_t>(entry_offset);
     entry_offset += sizeof(page_size_t) + key_size;

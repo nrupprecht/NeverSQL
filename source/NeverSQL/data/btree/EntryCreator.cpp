@@ -18,16 +18,13 @@ page_size_t EntryCreator::GetMinimumEntrySize() const {
 }
 
 page_size_t EntryCreator::GetRequestedSize(page_size_t maximum_entry_size) {
-if (maximum_entry_size == 1) {
-  std::cout << "";
-}
-
   NOSQL_REQUIRE(GetMinimumEntrySize() <= maximum_entry_size,
                 "maximum entry size too small ("
                     << maximum_entry_size << ", minimum is " << GetMinimumEntrySize()
                     << "), this should have been checked before calling this function");
 
-  auto size = (serialize_size_ ? sizeof(page_size_t) : 0) + payload_->GetRequiredSize();
+  auto size =
+      static_cast<page_size_t>((serialize_size_ ? sizeof(page_size_t) : 0) + payload_->GetRequiredSize());
   if (maximum_entry_size < size) {
     LOG_SEV(Trace) << "Size of entry is " << size << ", which is larger than the maximum entry size of "
                    << maximum_entry_size << ". Overflow page needed.";
@@ -57,14 +54,15 @@ page_size_t EntryCreator::Create(page_size_t starting_offset, Page* page, const 
   return createSinglePageEntry(starting_offset, page);
 }
 
-void EntryCreator::createOverflowEntry(page_size_t starting_offset,
-                                       Page* page,
-                                       const BTreeManager* btree_manager) {
+void EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t starting_offset,
+                                       [[maybe_unused]] Page* page,
+                                       [[maybe_unused]] const BTreeManager* btree_manager) {
   // [overflow_key: 8 bytes] [overflow page number: 8 bytes]
 
   // For each subsequent overflow page:
   // [next overflow page number: 8 bytes]? [entry_size: 2 bytes] [entry_data: entry_size bytes]
 
+  // TODO: Implement overflow entries.
   NOSQL_FAIL("unimplemented");
 }
 

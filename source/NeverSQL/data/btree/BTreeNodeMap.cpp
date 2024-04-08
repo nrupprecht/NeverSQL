@@ -48,10 +48,10 @@ SpaceRequirement BTreeNodeMap::CalculateSpaceRequirements(GeneralKey key) const 
   auto&& header = getHeader();
 
   // Amount of space needed for the pointer.
-  auto pointer_space = sizeof(page_size_t);
+  auto pointer_space = static_cast<page_size_t>(sizeof(page_size_t));
   // Calculate amount of space for the cell.
   // [Flags: 1 byte] [Key size: 2 bytes]? [Key: 8 bytes | variable]
-  auto cell_header_space = sizeof(uint8_t) + key.size();
+  auto cell_header_space = static_cast<page_size_t>(sizeof(uint8_t) + key.size());
   if (header.AreKeySizesSpecified()) {
     cell_header_space += sizeof(uint16_t);
   }

@@ -14,8 +14,8 @@
 #include "NeverSQL/data/PageCache.h"
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
 #include "NeverSQL/data/btree/EntryCreator.h"
-#include "NeverSQL/utility/DataTypes.h"
 #include "NeverSQL/data/internals/DatabaseEntry.h"
+#include "NeverSQL/utility/DataTypes.h"
 
 namespace neversql {
 
@@ -165,7 +165,9 @@ private:
 
   //! \brief Split a node. This may, recursively, lead to more splits if the split causes the parent node to
   //!        be full.
-  void splitNode(BTreeNodeMap& node, SearchResult& result, std::optional<std::reference_wrapper<StoreData>> data);
+  void splitNode(BTreeNodeMap& node,
+                 SearchResult& result,
+                 std::optional<std::reference_wrapper<StoreData>> data);
 
   //! \brief Split a single node, returning the key that was split on and the nodes.
   SplitPage splitSingleNode(BTreeNodeMap& node, std::optional<std::reference_wrapper<StoreData>> data);

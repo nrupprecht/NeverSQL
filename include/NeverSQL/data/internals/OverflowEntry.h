@@ -13,8 +13,8 @@ namespace neversql::internal {
 //!
 class OverflowEntry : public DatabaseEntry {
 public:
-  OverflowEntry(std::span<const std::byte> entry_header,
-                const BTreeManager* btree_manager) : btree_manager_(btree_manager) {
+  OverflowEntry([[maybe_unused]] std::span<const std::byte> entry_header,
+                [[maybe_unused]] const BTreeManager* btree_manager) : btree_manager_(btree_manager) {
     // Get information from the header, get the first overflow page.
     // TODO: Implement.
   }
@@ -32,7 +32,7 @@ public:
 private:
   std::span<std::byte> data_;
 
-  const BTreeManager* btree_manager_;
+  [[maybe_unused]] const BTreeManager* btree_manager_;
 };
 
 } // namespace neversql::internal
