@@ -121,14 +121,14 @@ int main() {
     }
   }
 
-  //  auto it_begin = manager.Begin("elements");
-  //  auto end_it = manager.End("elements");
-  //  for (auto it = it_begin; it != end_it; ++it) {
-  //    auto view = *it;
-  //    // Interpret the data as a document.
-  //    neversql::DocumentReader reader(view);
-  //    LOG_SEV(Info) << formatting::Format("Value: \n{@BYELLOW}{}{@RESET}", neversql::PrettyPrint(reader));
-  //  }
+  auto it_begin = manager.Begin("elements");
+  auto end_it = manager.End("elements");
+  for (auto it = it_begin; it != end_it; ++it) {
+    auto entry = *it;
+    // Interpret the data as a document.
+    auto document = EntryToDocument(*entry);
+    LOG_SEV(Info) << formatting::Format("{@BYELLOW}{}{@RESET}", neversql::PrettyPrint(*document));
+  }
 
   return 0;
 }

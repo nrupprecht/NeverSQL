@@ -8,6 +8,7 @@
 
 namespace neversql {
 class BTreeManager;
+class Document;
 }
 
 namespace neversql::internal {
@@ -23,11 +24,17 @@ public:
   virtual bool Advance() = 0;
 
   virtual ~DatabaseEntry() = default;
+
+  //! \brief Do a check of whether the entry is valid.
+  virtual bool IsValid() const = 0;
 };
 
 //! \brief Read an entry, starting with the given offset in the page.
 std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
-                                         const Page* page,
+                                         std::unique_ptr<const Page>&& page,
                                          const BTreeManager* btree_manager);
+
+//! \brief Convert a database entry to a document.
+std::unique_ptr<Document> EntryToDocument(DatabaseEntry& entry);
 
 }  // namespace neversql::internal

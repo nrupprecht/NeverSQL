@@ -63,22 +63,20 @@ BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
   return *this;
 }
 
-std::span<const std::byte> BTreeManager::Iterator::operator*() const {
+std::unique_ptr<internal::DatabaseEntry> BTreeManager::Iterator::operator*() const {
   if (done()) {
     return {};
   }
 
   auto [page_number, cell_index] = progress_.Top()->get();
-  auto page = *manager_.loadNodePage(page_number);
-  auto cell = page.getNthCell(cell_index);
+  auto node = *manager_.loadNodePage(page_number);
+  auto cell = node.getNthCell(cell_index);
   // Should be a data cell.
   NOSQL_ASSERT(std::holds_alternative<DataNodeCell>(cell), "Cell is not a data cell.");
-  // TODO / NOTE: This is not truly safe in a multi-threaded environment, but it is safe in the context of
-  //  what I have so far.
-  // TODO: This could be solved, though, by the iterator pinning its current page. Then the data would at
-  //  least not be dangling, though if another transaction is modifying the data, the actual data
-  //  referenced by the span might change.
-  return std::get<DataNodeCell>(cell).SpanValue();
+
+  const auto cell_offset = node.getCellOffsetByIndex(cell_index);
+
+  return internal::ReadEntry(cell_offset, std::move(node.GetPage()), &manager_);
 }
 
 bool BTreeManager::Iterator::operator==(const Iterator& other) const {
@@ -139,9 +137,11 @@ std::unique_ptr<BTreeManager> BTreeManager::CreateNewBTree(PageCache& page_cache
   // === Reserved space. =================================================================================
   // 1 byte [Key type enum] int8_t
   // 1 byte [Flags] uint8_t
+  // 8 byte Current overflow page number
+  // 8 byte Next overflow page key
   // === If using auto-incrementing keys, space for the key. This is only possible with primary_key_t. ===
   // 8 byte (optional) [Auto-incrementing key] primary_key_t
-  page_size_t reserved_space = 2;
+  page_size_t reserved_space = 2 + 2 * sizeof(primary_key_t);
   if (key_type == DataTypeEnum::UInt64) {
     reserved_space += sizeof(primary_key_t);
   }
@@ -159,10 +159,10 @@ std::unique_ptr<BTreeManager> BTreeManager::CreateNewBTree(PageCache& page_cache
 
   // Write zero into the reserved space.
   auto offset = root_node.GetHeader().GetReservedStart();
-  offset = root_node.GetPage().WriteToPage<int8_t>(offset, static_cast<int8_t>(key_type));
-  offset = root_node.GetPage().WriteToPage<uint8_t>(offset, 0);
+  offset = root_node.GetPage()->WriteToPage<int8_t>(offset, static_cast<int8_t>(key_type));
+  offset = root_node.GetPage()->WriteToPage<uint8_t>(offset, 0);
   if (key_type == DataTypeEnum::UInt64) {
-    root_node.GetPage().WriteToPage<primary_key_t>(offset, 0);
+    root_node.GetPage()->WriteToPage<primary_key_t>(offset, 0);
   }
 
   return std::make_unique<BTreeManager>(root_node.GetPageNumber(), page_cache);
@@ -188,12 +188,18 @@ void BTreeManager::AddValue(GeneralKey key, std::unique_ptr<internal::EntryCreat
 
   // Check if we can add the element to the node (without re-balancing).
 
+  // TODO: Use GetSpaceRequirements
+
   // For now, don't do anything fancy, just check if there is enough de-fragmented space to add the
   // element.
   // TODO: More complex strategies could include vacuuming, looking for fragmented free space, etc.
   auto space_available = result.node->GetDefragmentedFreeSpace();
   // Cell offset, entry size, and the entry itself.
-  auto necessary_space = sizeof(page_size_t) + sizeof(entry_size_t) + entry_creator->GetMinimumEntrySize();
+  auto necessary_space = sizeof(page_size_t) + entry_creator->GetMinimumEntrySize();
+  if (!entry_creator->GetNeedsOverflow()) {
+    // Serialize entry size.
+    necessary_space += sizeof(entry_size_t);
+  }
   // Space required for the key.
   if (serialize_key_size_) {
     necessary_space += sizeof(uint16_t);
@@ -252,7 +258,7 @@ void BTreeManager::initialize() {
   auto root = loadNodePage(root_page_);
 
   // Get the key type from the root page.
-  key_type_ = static_cast<DataTypeEnum>(root->GetPage().Read<int8_t>(root->GetHeader().GetReservedStart()));
+  key_type_ = static_cast<DataTypeEnum>(root->GetPage()->Read<int8_t>(root->GetHeader().GetReservedStart()));
 
   serialize_key_size_ = key_type_ == DataTypeEnum::String;
 
@@ -278,11 +284,12 @@ primary_key_t BTreeManager::getNextPrimaryKey() const {
   auto root = loadNodePage(root_page_);
   primary_key_t pk {};
 
-  auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + 2);
-  pk = root->GetPage().Read<primary_key_t>(counter_offset);
+  auto offset = 2 + 2 * sizeof(primary_key_t);
+  auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + offset);
+  pk = root->GetPage()->Read<primary_key_t>(counter_offset);
 
   primary_key_t next_primary_key = pk + 1;
-  root->GetPage().WriteToPage(counter_offset, next_primary_key);
+  root->GetPage()->WriteToPage(counter_offset, next_primary_key);
 
   LOG_SEV(Trace) << "Next primary key is " << pk << ".";
   return pk;
@@ -296,15 +303,33 @@ page_number_t BTreeManager::getNextOverflowPage() {
   // TODO: Any setup needed for the page to be an overflow page? Set some flags?
 
   current_overflow_page_number_ = new_page.GetPageNumber();
-  const auto counter_offset =
-      static_cast<page_size_t>(root->GetHeader().GetReservedStart() + 2 + sizeof(primary_key_t));
-  root->GetPage().WriteToPage<page_number_t>(counter_offset, current_overflow_page_number_);
+
+  auto offset = 2;
+  const auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + offset);
+  root->GetPage()->WriteToPage<page_number_t>(counter_offset, current_overflow_page_number_);
 
   return current_overflow_page_number_;
 }
 
-page_number_t BTreeManager::getCurrentOverflowPage() const {
+page_number_t BTreeManager::getCurrentOverflowPage() {
+  if (current_overflow_page_number_ == 0) {
+    // No overflow page was created yet, get a new one.
+    current_overflow_page_number_ = getNextOverflowPage();
+  }
   return current_overflow_page_number_;
+}
+
+primary_key_t BTreeManager::getNextOverflowEntryNumber() {
+  auto root = loadNodePage(root_page_);
+
+  ++next_overflow_entry_number_;
+
+  // Next overflow entry is stored right after the flags.
+  auto offset = 2 + sizeof(primary_key_t);
+  const auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + offset);
+  root->GetPage()->WriteToPage<page_number_t>(counter_offset, next_overflow_entry_number_);
+
+  return next_overflow_entry_number_ - 1;
 }
 
 BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, page_size_t reserved_space) const {
@@ -313,7 +338,12 @@ BTreeNodeMap BTreeManager::newNodePage(BTreePageType type, page_size_t reserved_
   node.cmp_ = cmp_;
   node.debug_key_func_ = debug_key_func_;
 
-  node.GetHeader().InitializePage(node.GetPageNumber(), type, reserved_space);
+  if (type == BTreePageType::OverflowPage) {
+    node.GetHeader().InitializeOverflowPage(node.GetPageNumber());
+  }
+  else {
+    node.GetHeader().InitializePage(node.GetPageNumber(), type, reserved_space);
+  }
   return node;
 }
 
@@ -341,7 +371,7 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
   return node;
 }
 
-bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) const {
+bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) {
   auto header = node_map.GetHeader();
   LOG_SEV(Debug) << "Adding element with pk = " << debugKey(data.key) << " to page "
                  << node_map.GetPageNumber() << ", unique-keys = " << unique_keys << ".";
@@ -426,19 +456,19 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
   if (header.AreKeySizesSpecified()) {
     flags |= static_cast<std::byte>(internal::EntryFlags::KeySizeIsSerialized);
   }
-  offset = page.WriteToPage(offset, flags);
+  offset = page->WriteToPage(offset, flags);
 
   // If the page is set up to use fixed primary_key_t length keys, just write the key.
   if (header.AreKeySizesSpecified()) {
     // Write the size of the key, key size is stored as a uint16_t.
     auto key_size = static_cast<uint16_t>(data.key.size());
-    offset = page.WriteToPage(offset, key_size);
+    offset = page->WriteToPage(offset, key_size);
   }
-  offset = page.WriteToPage(offset, data.key);
+  offset = page->WriteToPage(offset, data.key);
 
   // Ask the EntryCreator to create the entry itself.
-  LOG_SEV(Trace) << "Creating entry at offset " << offset << " on page " << page.GetPageNumber() << ".";
-  offset = entry_creator.Create(offset, &page, this);
+  LOG_SEV(Trace) << "Creating entry at offset " << offset << " on page " << page->GetPageNumber() << ".";
+  offset = entry_creator.Create(offset, page.get(), this);
 
   // Make sure we wrote the correct amount of data.
   NOSQL_ASSERT(offset == entry_end_offset,
@@ -448,7 +478,7 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 
   // Added the cell.
   header.SetFreeEnd(static_cast<page_size_t>(header.GetFreeEnd() - cell_space));
-  page.WriteToPage(header.GetFreeStart(), header.GetFreeEnd());
+  page->WriteToPage(header.GetFreeStart(), header.GetFreeEnd());
   header.SetFreeBegin(header.GetFreeStart() + sizeof(page_size_t));
 
   // Make sure keys are all in ascending order. Only need to do this if the keys are not already sorted
@@ -497,7 +527,15 @@ void BTreeManager::splitNode(BTreeNodeMap& node,
   // Need to make sure there is enough space in the parent node.
   auto space_requirements = parent->CalculateSpaceRequirements(store_data.key);
   auto maximum_entry_size = std::min(max_entry_size_, space_requirements.max_entry_space);
-  if (maximum_entry_size < store_data.entry_creator->GetMinimumEntrySize()) {
+
+  if (max_entries_per_page_ <= parent->GetHeader().GetNumPointers()) {
+    // If the entry is too large to fit in the parent, we have to split the parent.
+    LOG_SEV(Trace) << "  * Parent node " << parent_page_number
+                   << " cannot store another entry (has max allowed, " << max_entries_per_page_
+                   << "), splitting.";
+    splitNode(*parent, result, store_data);
+  }
+  else if (maximum_entry_size < store_data.entry_creator->GetMinimumEntrySize()) {
     // If the entry is too large to fit in the parent, we have to split the parent.
     LOG_SEV(Trace) << "  * Parent node " << parent_page_number << " is too small to add the new right page.";
     splitNode(*parent, result, store_data);
@@ -600,7 +638,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
   std::ranges::copy(remaining_pointers, pointers_copy.begin());
   // Span for the vector
   remaining_pointers = pointers_copy;
-  node.GetPage().WriteToPage(header.GetPointersStart(), remaining_pointers);
+  node.GetPage()->WriteToPage(header.GetPointersStart(), remaining_pointers);
 
   // "Free" the rightmost num_elements_to_move pointers in the original node.
   // TODO: Create a linked list of blocks of newly freed space?
@@ -785,10 +823,10 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
                    << " (cell size " << cell_size << ").";
 
     // Copy the cell to the new location.
-    page.MoveInPage(offset, next_point, cell_size);
+    page->MoveInPage(offset, next_point, cell_size);
 
     // Update the pointer.
-    page.WriteToPage(header.GetPointersStart() + (pointer_number * sizeof(page_size_t)), next_point);
+    page->WriteToPage(header.GetPointersStart() + (pointer_number * sizeof(page_size_t)), next_point);
   }
   // Set the updated free-end location.
   header.SetFreeEnd(next_point);
@@ -845,7 +883,8 @@ RetrievalResult BTreeManager::retrieve(GeneralKey key) const {
     const auto cell_index = result.search_result.path.Top()->get().second;
     const auto cell_offset = result.search_result.node->getCellOffsetByIndex(cell_index);
 
-    result.entry = internal::ReadEntry(cell_offset, &result.search_result.node->GetPage(), this);
+    // Have to pass in a new page handle to read entry.
+    result.entry = internal::ReadEntry(cell_offset, result.search_result.node->GetPage()->NewHandle(), this);
   }
   return result;
 }

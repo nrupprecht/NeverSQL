@@ -132,7 +132,7 @@ public:
     advance();
   }
 
-  std::span<const std::byte> operator*() const { return *iterator_; }
+  std::unique_ptr<internal::DatabaseEntry> operator*() const { return *iterator_; }
 
   BTreeQueryIterator& operator++() {
     ++iterator_;
@@ -150,7 +150,8 @@ private:
   void advance() {
     // Find the next valid iterator.
     for (; !iterator_.IsEnd(); ++iterator_) {
-      auto document = ReadDocumentFromBuffer(*iterator_);
+      auto entry = *iterator_;
+      auto document = internal::EntryToDocument(*entry);
       if (condition_(*document)) {
         return;
       }

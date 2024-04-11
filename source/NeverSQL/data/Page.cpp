@@ -51,4 +51,8 @@ page_size_t RCPage::WriteToPage(page_size_t offset, std::span<const std::byte> d
   return static_cast<page_size_t>(offset + data.size());
 }
 
+std::unique_ptr<Page> RCPage::NewHandle() const {
+  return owning_cache_->GetPage(page_number_);
+}
+
 }  // namespace neversql

@@ -66,6 +66,11 @@ inline DataTypeEnum GetDataTypeEnum<int64_t>() {
 }
 
 template<>
+inline DataTypeEnum GetDataTypeEnum<unsigned long>() {
+  return DataTypeEnum::Int64;
+}
+
+template<>
 inline DataTypeEnum GetDataTypeEnum<uint64_t>() {
   return DataTypeEnum::UInt64;
 }

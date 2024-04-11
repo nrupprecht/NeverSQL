@@ -32,9 +32,9 @@ DataManager::DataManager(const std::filesystem::path& database_path)
 
     collection_index_ = std::make_unique<BTreeManager>(meta.GetIndexPage(), page_cache_);
     std::size_t num_collections {};
-    for (auto it : *collection_index_) {
+    for (auto entry : *collection_index_) {
       // Interpret the data as a document.
-      auto document = ReadDocumentFromBuffer(it);
+      auto document = internal::EntryToDocument(*entry);
 
       auto collection_name = document->TryGetAs<std::string>("collection_name").value();
       auto page_number = document->TryGetAs<page_number_t>("index_page_number").value();

@@ -87,7 +87,9 @@ int main() {
   auto iterator = neversql::query::BTreeQueryIterator(manager.Begin("elements"),
                                                       neversql::query::LessEqual<int>("age", 40));
   for (; !iterator.IsEnd(); ++iterator) {
-    auto document = neversql::ReadDocumentFromBuffer(*iterator);
+    auto entry = *iterator;
+    // Interpret the data as a document.
+    auto document = EntryToDocument(*entry);
     LOG_SEV(Info) << "Found: " << neversql::PrettyPrint(*document);
   }
 

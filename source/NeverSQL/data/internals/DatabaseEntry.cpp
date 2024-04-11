@@ -8,11 +8,12 @@
 #include "NeverSQL/data/btree/EntryCreator.h"
 #include "NeverSQL/data/internals/OverflowEntry.h"
 #include "NeverSQL/data/internals/SinglePageEntry.h"
+#include "NeverSQL/data/Document.h"
 
 namespace neversql::internal {
 
 std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
-                                         const Page* page,
+                                         std::unique_ptr<const Page>&& page,
                                          const BTreeManager* btree_manager) {
   // TODO: This function takes care of some things that are the B-tree's responsibility, i.e., key related
   //   things. These things should probably be moved to the B-tree, and the offset should be at the start of
@@ -53,12 +54,26 @@ std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
     entry_offset += sizeof(primary_key_t);
   }
 
+  LOG_SEV(Trace) << "ReadEntry: Start of cell data is at offset " << entry_offset << ".";
+
   if (is_single_page) {
-    return std::make_unique<SinglePageEntry>(entry_offset, page);
+    return std::make_unique<SinglePageEntry>(entry_offset, std::move(page));
   }
 
   auto header = page->ReadFromPage(entry_offset, 16);
   return std::make_unique<OverflowEntry>(header, btree_manager);
+}
+
+std::unique_ptr<Document> EntryToDocument(DatabaseEntry& entry) {
+  NOSQL_REQUIRE(entry.IsValid(), "entry is not valid");
+  // TODO: Some smarter, byte-by-byte document construction, so we don't need the intermediate buffer.
+  lightning::memory::MemoryBuffer<std::byte> buffer;
+  do {
+    auto data = entry.GetData();
+    buffer.Append(data);
+  } while (entry.Advance());
+  auto view = std::span {buffer.Data(), buffer.Size()};
+ return neversql::ReadDocumentFromBuffer(view);
 }
 
 }  // namespace neversql::internal

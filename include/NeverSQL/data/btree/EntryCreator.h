@@ -121,13 +121,13 @@ public:
   //!
   //! \return Returns the offset to the place after the entry, in the original page (even if an overflow page
   //!         was created and data was added to other pages.
-  page_size_t Create(page_size_t starting_offset, Page* page, const BTreeManager* btree_manager);
+  page_size_t Create(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
 
   //! \brief Return whether the EntryCreator is going to create overflow pages.
   bool GetNeedsOverflow() const noexcept { return overflow_page_needed_; }
 
 protected:
-  void createOverflowEntry(page_size_t starting_offset, Page* page, const BTreeManager* btree_manager);
+  void createOverflowEntry(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
   page_size_t createSinglePageEntry(page_size_t starting_offset, Page* page);
 
   bool overflow_page_needed_ = false;

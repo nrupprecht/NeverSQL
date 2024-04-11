@@ -4,6 +4,9 @@
 
 #include "NeverSQL/data/btree/EntryCreator.h"
 // Other files.
+#include <NeverSQL/data/btree/BTree.h>
+#include <NeverSQL/data/internals/Utility.h>
+
 #include "NeverSQL/data/Page.h"
 
 namespace neversql::internal {
@@ -43,7 +46,7 @@ std::byte EntryCreator::GenerateFlags() const {
 }
 
 //! \brief Create an entry, starting with the given offset in the page.
-page_size_t EntryCreator::Create(page_size_t starting_offset, Page* page, const BTreeManager* btree_manager) {
+page_size_t EntryCreator::Create(page_size_t starting_offset, Page* page, BTreeManager* btree_manager) {
   // Header or single page entry.
   if (overflow_page_needed_) {
     createOverflowEntry(starting_offset, page, btree_manager);
@@ -56,14 +59,36 @@ page_size_t EntryCreator::Create(page_size_t starting_offset, Page* page, const 
 
 void EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t starting_offset,
                                        [[maybe_unused]] Page* page,
-                                       [[maybe_unused]] const BTreeManager* btree_manager) {
+                                       [[maybe_unused]] BTreeManager* btree_manager) {
+  // Create the entry in the main page.
+  // Header:
   // [overflow_key: 8 bytes] [overflow page number: 8 bytes]
+
+  // Get an overflow number.
+  auto overflow_key = btree_manager->getNextOverflowEntryNumber();
+  page->WriteToPage(starting_offset, overflow_key);
 
   // For each subsequent overflow page:
   // [next overflow page number: 8 bytes]? [entry_size: 2 bytes] [entry_data: entry_size bytes]
 
-  // TODO: Implement overflow entries.
-  NOSQL_FAIL("unimplemented");
+  auto overflow_page_number = btree_manager->getCurrentOverflowPage();
+  auto overflow_page = btree_manager->loadNodePage(overflow_page_number);
+  auto space_requirements = overflow_page->CalculateSpaceRequirements(SpanValue(overflow_key));
+
+  // Write the overflow page number.
+  page->WriteToPage(starting_offset + sizeof(primary_key_t), overflow_page_number);
+
+  // TODO: Write actual data to the overflow pages.
+
+  // Make sure there is enough entry space.
+  // Layout:
+  // [next overflow page number: 8 bytes]? [entry_size: 2 bytes]? [entry_data: entry_size bytes]
+
+  constexpr page_size_t minimum_data_size = 10;
+
+  // No point writing anything unless at least some amount of space is available to store actual data.
+  while (space_requirements.max_entry_space <= 8 + minimum_data_size) {
+  }
 }
 
 page_size_t EntryCreator::createSinglePageEntry(page_size_t starting_offset, Page* page) {
@@ -71,11 +96,14 @@ page_size_t EntryCreator::createSinglePageEntry(page_size_t starting_offset, Pag
   auto offset = starting_offset;
   if (serialize_size_) {
     const auto entry_size = static_cast<page_size_t>(payload_->GetRequiredSize());
-    offset = page->WriteToPage(starting_offset, entry_size);
+    LOG_SEV(Trace) << "Writing entry size " << entry_size << " for single page entry at " << offset << ".";
+    offset = page->WriteToPage(offset, entry_size);
   }
+  LOG_SEV(Trace) << "Starting writing data for single page entry at " << offset << ".";
   while (payload_->HasData()) {
     offset = page->WriteToPage(offset, payload_->GetNextByte());
   }
+  LOG_SEV(Trace) << "Done writing data for single page entry, offset is " << offset << ".";
   return offset;
 }
 

@@ -13,35 +13,45 @@ enum class BTreePageType : uint8_t {
   Internal = 0b01,
   RootLeaf = 0b10,
   RootInternal = 0b11,
+  OverflowPage = 0b100,
 };
+
+inline constexpr uint8_t POINTERS_PAGE_FLAG = 0x1;
+inline constexpr uint8_t ROOT_PAGE_FLAG = 0x2;
+inline constexpr uint8_t KEY_SIZES_SERIALIZED_FLAG = 0x4;
+inline constexpr uint8_t OVERFLOW_PAGE_FLAG = 0x8;
 
 //! \brief The header for a B-tree page.
 //!
-//! [ HEADER      ][ Pointers ][      FREE SPACE        ][ Stored data  ][ RESERVED SPACE ]
-//! |              |           |                         |               |                |
-//! 0      sizeof(Header)   free_start               free_end       reserved_start       page_size
+//! Sections and pointers to end of section (one past):
 //!
-//! Flag bits: flags that give information about the page.
-//! Flags bit layout:
-//!     0000 0K RP
-//!
-//! P => Pointers page (0 = no, 1 = yes). Leaf nodes and the root node in pointer-mode (when the root has
-//!     children) have this flag set to true.
-//! R => Root node (0 = no, 1 = yes). The root node has this flag set to true.
-//! K => Key sizes specified (0 = no, 1 = yes). The key size, if serialized, is a 16 bit integer.
+//! | Header         | Pointers    | Free space | Stored data    | Reserved space |
+//! |---------------:|------------:|-----------:|---------------:|---------------:|
+//! | sizeof(Header) | free_start  | free_end   | reserved_start | page_size      |
 //!
 //! The rest of the bits are reserved for future use and denoted by '0's.
 //!
-//! Header layout:
-//! Magic number:       8 bytes,    offset 0
-//! Flags:              1 byte,     offset 8
-//! Free start:         2 bytes,    offset 9
-//! Free end:           2 bytes,    offset 11
-//! Reserved start:     2 bytes,    offset 13
-//! Page number:        8 bytes,    offset 15
-//! Additional data:    8 bytes,    offset 23
+//! | Entry           | Size    | Offset |
+//! |:----------------|:-------:|:------:|
+//! | Magic number    | 8 bytes | 0      |
+//! | Flags           | 1 byte  | 8      |
+//! | Free start      | 2 bytes | 9      |
+//! | Free end        | 2 bytes | 11     |
+//! | Reserved start  | 2 bytes | 13     |
+//! | Page number     | 8 bytes | 15     |
+//! | Additional data | 8 bytes | 23     |
 //!
-//! Pointers start at offset 31
+//! Pointers start at offset 31.
+//!
+//! Flag definitions:
+//!
+//! | Bit | Name  | Description  |
+//! |:---:|:-----:|:-------------|
+//! |   0 | P     | Pointers page (0 = no, 1 = yes). Leaf nodes and the root node in pointer-mode (when the root has children) have this flag set to true. |
+//! |   1 | R     | Root node (0 = no, 1 = yes). The root node has this flag set to true. |
+//! |   2 | K     | Key sizes specified (0 = no, 1 = yes). The key size, if serialized, is a 16 bit integer. |
+//! |   3 | V     | Is overflow page (0 = no, 1 = yes). |
+//!
 class BTreePageHeader {
   friend class BTreeNodeMap;
 
@@ -73,7 +83,18 @@ public:
     SetMagicNumber(ToUInt64("NOSQLBTR"));
     SetPageNumber(page_number);
     SetFlags(static_cast<uint8_t>(type));
-    auto reserved_start = static_cast<page_size_t>(GetPageSize() - reserved_size);
+    const auto reserved_start = static_cast<page_size_t>(GetPageSize() - reserved_size);
+    SetReservedStart(reserved_start);
+    SetFreeEnd(reserved_start);
+    SetFreeBegin(GetPointersStart());
+  }
+
+  void InitializeOverflowPage(page_number_t page_number) {
+    SetMagicNumber(ToUInt64("OVERFLOW"));
+    SetPageNumber(page_number);
+    SetFlags(OVERFLOW_PAGE_FLAG);
+
+    const auto reserved_start = GetPageSize();
     SetReservedStart(reserved_start);
     SetFreeEnd(reserved_start);
     SetFreeBegin(GetPointersStart());

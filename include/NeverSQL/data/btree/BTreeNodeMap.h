@@ -6,6 +6,7 @@
 
 #include <span>
 
+#include "EntryCreator.h"
 #include "NeverSQL/data/Page.h"
 #include "NeverSQL/data/btree/BTreePageHeader.h"
 #include "NeverSQL/data/internals/DatabaseEntry.h"
@@ -29,8 +30,6 @@ struct DataNodeCell {
   const std::span<const std::byte> key;
   std::span<const std::byte> data;
 
-  bool key_size_is_serialized = false;
-
   // =================================================================================================
   // Helper functions.
   // =================================================================================================
@@ -39,8 +38,17 @@ struct DataNodeCell {
   NO_DISCARD std::span<const std::byte> SpanValue() const noexcept { return data; }
 
   NO_DISCARD page_size_t GetCellSize() const noexcept {
-    return static_cast<page_size_t>(key.size() + sizeof(entry_size_t) + data.size()
-                                    + (key_size_is_serialized ? 2 : 0));
+    return static_cast<page_size_t>(
+        // Flags.
+        sizeof(std::byte)
+        // Potentially, key size.
+        + (internal::GetKeySizeIsSerialized(flags) ? 2 : 0)
+        // The key.
+        + key.size()
+        // Potentially, the entry size.
+        + (internal::GetIsEntrySizeSerialized(flags) ? sizeof(entry_size_t) : 0)
+        // The entry.
+        + data.size());
   }
 
   NO_DISCARD page_size_t GetDataSize() const noexcept { return static_cast<page_size_t>(data.size()); }
@@ -56,20 +64,29 @@ struct PointersNodeCell {
   //! \note The data of a pointers node cell (the entry) is just the page number.
   const page_number_t page_number;
 
-  bool key_size_is_serialized = false;
-
   NO_DISCARD page_size_t GetCellSize() const noexcept {
-    return static_cast<page_size_t>(key.size() + sizeof(page_number_t) + (key_size_is_serialized ? 2 : 0));
+    return static_cast<page_size_t>(
+        // Flags.
+        sizeof(std::byte)
+        // Potentially, key size.
+        + (internal::GetKeySizeIsSerialized(flags) ? 2 : 0)
+        // The key.
+        + key.size()
+        // The page number (pointer value).
+        + sizeof(page_number_t));
   }
 
   NO_DISCARD static page_size_t GetDataSize() noexcept { return sizeof(page_number_t); }
 };
 
 struct SpaceRequirement {
+  //! \brief The amount of space that the pointer needs.
   page_size_t pointer_space;
 
+  //! \brief The amount of space that the cell header needs.
   page_size_t cell_header_space;
 
+  //! \brief The maximum amount of space that would be available for storing an entry.
   page_size_t max_entry_space;
 };
 
@@ -99,8 +116,8 @@ public:
   page_size_t GetPageSize() const;
 
   //! \brief Get the underlying page.
-  NO_DISCARD const Page& GetPage() const;
-  NO_DISCARD Page& GetPage();
+  NO_DISCARD const std::unique_ptr<Page>& GetPage() const;
+  NO_DISCARD std::unique_ptr<Page>& GetPage();
 
   //! \brief Get the number of pointers (and therefore cells) in the node.
   NO_DISCARD page_size_t GetNumPointers() const;

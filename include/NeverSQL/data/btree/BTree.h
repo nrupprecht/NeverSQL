@@ -15,9 +15,15 @@
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
 #include "NeverSQL/data/btree/EntryCreator.h"
 #include "NeverSQL/data/internals/DatabaseEntry.h"
+#include "NeverSQL/data/internals/DatabaseEntry.h"
 #include "NeverSQL/utility/DataTypes.h"
 
 namespace neversql {
+
+namespace internal {
+// Forward declare, friend of BTreeManager.
+class EntryCreator;
+}  // namespace internal
 
 //! \brief Structure used to represent a position in the B-tree.
 //!
@@ -79,6 +85,8 @@ struct SplitPage {
 class BTreeManager {
   friend class DataManager;
 
+  friend class internal::EntryCreator;
+
 public:
   explicit BTreeManager(page_number_t root_page, PageCache& page_cache);
 
@@ -101,7 +109,7 @@ public:
   class Iterator {
   public:
     using difference_type = std::ptrdiff_t;
-    using value_type = std::span<const std::byte>;
+    using value_type = std::unique_ptr<internal::DatabaseEntry>;
     using pointer = value_type*;
     using reference = value_type&;
     using iterator_category = std::forward_iterator_tag;
@@ -116,7 +124,7 @@ public:
     Iterator(const BTreeManager& manager, [[maybe_unused]] bool);
 
     Iterator& operator++();
-    std::span<const std::byte> operator*() const;
+    std::unique_ptr<internal::DatabaseEntry> operator*() const;
     bool operator==(const Iterator& other) const;
     bool operator!=(const Iterator& other) const;
 
@@ -150,7 +158,10 @@ private:
   page_number_t getNextOverflowPage();
 
   //! \brief Get the current overflow page.
-  page_number_t getCurrentOverflowPage() const;
+  page_number_t getCurrentOverflowPage();
+
+  //! \brief Get the next overflow entry number.
+  primary_key_t getNextOverflowEntryNumber();
 
   BTreeNodeMap newNodePage(BTreePageType type, page_size_t reserved_space) const;
 
@@ -161,7 +172,7 @@ private:
   //! \param node_map The node to which the data should be added.
   //! \param data The data to add to the node, and some information about how to represent the data.
   //! \param unique_keys Whether the keys in the node must be unique. This will generally be true.
-  bool addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys = true) const;
+  bool addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys = true);
 
   //! \brief Split a node. This may, recursively, lead to more splits if the split causes the parent node to
   //!        be full.
@@ -210,6 +221,9 @@ private:
 
   //! \brief The current page available for overflow entries. Zero if no page is being used.
   page_number_t current_overflow_page_number_ {};
+
+  //! \brief The next primary key to use for overflow entries.
+  primary_key_t next_overflow_entry_number_ {};
 
   //! \brief Whether the key's size needs to be serialized. TODO: Get this from the key type.
   bool serialize_key_size_ = false;

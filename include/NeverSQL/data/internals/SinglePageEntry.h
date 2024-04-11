@@ -10,24 +10,27 @@ namespace neversql::internal {
 
 class SinglePageEntry : public DatabaseEntry {
 public:
-  SinglePageEntry(page_size_t starting_offset, const Page* page)
-      : starting_offset_(starting_offset)
-      , page_(page) {
-    entry_size_ = page->Read<page_size_t>(starting_offset);
+  SinglePageEntry(const page_size_t starting_offset, std::unique_ptr<const Page>&& page)
+      : starting_offset_(starting_offset + sizeof(page_size_t))
+      , page_(std::move(page)) {
+    entry_size_ = page_->Read<page_size_t>(starting_offset);
   }
 
   //! \brief Get the data. All the data is on the same page.
   std::span<const std::byte> GetData() const noexcept override {
-    return page_->ReadFromPage(starting_offset_ + 2, entry_size_);
+    return page_->ReadFromPage(starting_offset_, entry_size_);
   }
 
   //! \brief There is no further page to advance to.
   bool Advance() override { return false; }
 
+  //! \brief The page must be valid.
+  bool IsValid() const override { return page_ != nullptr && page_->GetData() != nullptr; }
+
 private:
   page_size_t starting_offset_;
   page_size_t entry_size_;
-  const Page* page_;
+  std::unique_ptr<const Page> page_;
 };
 
 }  // namespace neversql::internal

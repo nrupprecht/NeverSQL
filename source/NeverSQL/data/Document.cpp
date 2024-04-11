@@ -382,7 +382,8 @@ std::unique_ptr<Document> ReadDocumentFromBuffer(std::span<const std::byte> buff
     DataTypeEnum enum_value;
     std::memcpy(&enum_value, buffer.data(), 1);
     buffer = buffer.subspan(1);  // Shrink.
-    NOSQL_ASSERT(enum_value == DataTypeEnum::Document, "expected document type");
+    NOSQL_ASSERT(enum_value == DataTypeEnum::Document,
+                 "expected DataTypeEnum::Document, value is " << static_cast<int8_t>(enum_value));
   }
   auto document = std::make_unique<Document>();
   document->InitializeFromBuffer(buffer);

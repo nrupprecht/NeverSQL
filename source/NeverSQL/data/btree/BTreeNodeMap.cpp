@@ -3,14 +3,12 @@
 //
 
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
-
-#include <NeverSQL/data/btree/EntryCreator.h>
 // Other files.
+#include <NeverSQL/data/btree/EntryCreator.h>
 
 namespace neversql {
 
 BTreePageHeader BTreeNodeMap::GetHeader() {
-  // TODO: Remove. All modifications need to go through logging.
   return BTreePageHeader(page_.get());
 }
 
@@ -26,12 +24,12 @@ page_size_t BTreeNodeMap::GetPageSize() const {
   return page_->GetPageSize();
 }
 
-const Page& BTreeNodeMap::GetPage() const {
-  return *page_;
+const std::unique_ptr<Page>& BTreeNodeMap::GetPage() const {
+  return page_;
 }
 
-NO_DISCARD Page& BTreeNodeMap::GetPage() {
-  return *page_;
+std::unique_ptr<Page>& BTreeNodeMap::GetPage() {
+  return page_;
 }
 
 page_size_t BTreeNodeMap::GetNumPointers() const {
@@ -50,7 +48,7 @@ SpaceRequirement BTreeNodeMap::CalculateSpaceRequirements(GeneralKey key) const 
   // Amount of space needed for the pointer.
   auto pointer_space = static_cast<page_size_t>(sizeof(page_size_t));
   // Calculate amount of space for the cell.
-  // [Flags: 1 byte] [Key size: 2 bytes]? [Key: 8 bytes | variable]
+  // [Flags: 1 byte] [Key size: 2 bytes]? [Key: 8 bytes | key-size bytes]
   auto cell_header_space = static_cast<page_size_t>(sizeof(uint8_t) + key.size());
   if (header.AreKeySizesSpecified()) {
     cell_header_space += sizeof(uint16_t);
@@ -58,13 +56,13 @@ SpaceRequirement BTreeNodeMap::CalculateSpaceRequirements(GeneralKey key) const 
 
   // Given the current free space and the space needed for the pointer and the other parts of the cell, what
   // is the maximum amount of space available for the entry (not counting any page entry space restrictions).
-  requirement.max_entry_space = static_cast<page_size_t>(header.GetDefragmentedFreeSpace() - pointer_space - cell_header_space);
+  requirement.max_entry_space =
+      static_cast<page_size_t>(header.GetDefragmentedFreeSpace() - pointer_space - cell_header_space);
   requirement.pointer_space = pointer_space;
   requirement.cell_header_space = cell_header_space;
 
   return requirement;
 }
-
 
 std::optional<GeneralKey> BTreeNodeMap::GetLargestKey() const {
   if (auto&& pointers = getPointers(); !pointers.empty()) {
@@ -224,8 +222,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
 
   if (getHeader().IsPointersPage()) {
     return PointersNodeCell {.key = key,
-                             .page_number = page_->Read<page_number_t>(entry_offset),
-                             .key_size_is_serialized = key_size_is_serialized};
+                             .page_number = page_->Read<page_number_t>(entry_offset)};
   }
 
   // If this is an overflow header, it is 16 bytes. Otherwise, the size of the entry is stored in the next 2
@@ -237,7 +234,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
       : page_->ReadFromPage(entry_offset, 16);
 
   return DataNodeCell {
-      .flags = flags, .key = key, .data = entry_data, .key_size_is_serialized = key_size_is_serialized};
+      .flags = flags, .key = key, .data = entry_data};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {
@@ -254,7 +251,7 @@ void BTreeNodeMap::sortKeys() {
   std::ranges::sort(
       data, [this](auto&& ptr1, auto&& ptr2) { return cmp_(getKeyForCell(ptr1), getKeyForCell(ptr2)); });
   std::span<page_size_t> sorted_ptrs {data.data(), data.size()};
-  GetPage().WriteToPage(getHeader().GetPointersStart(), sorted_ptrs);
+  GetPage()->WriteToPage(getHeader().GetPointersStart(), sorted_ptrs);
 }
 
 std::string BTreeNodeMap::debugKey(GeneralKey key) const {

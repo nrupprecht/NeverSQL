@@ -24,15 +24,19 @@ class Page {
 public:
   //! \brief Create a page structure representing a page in the database with a specific number and its size,
   //! in bytes.
-  Page(page_number_t page_number, transaction_t transaction_number, page_size_t page_size) noexcept
+  Page(page_number_t page_number, transaction_t transaction_number, page_size_t page_size)
       : page_number_(page_number)
       , transaction_number_(transaction_number)
-      , page_size_(page_size) {}
+      , page_size_(page_size) {
+    NOSQL_REQUIRE(0 < page_size, "page size cannot be zero");
+  }
 
   //! \brief Create a placeholder page that has not yet been mapped to a page in the database.
-  explicit Page(page_size_t page_size) noexcept
+  explicit Page(page_size_t page_size)
       : page_number_(0)
-      , page_size_(page_size) {}
+      , page_size_(page_size) {
+    NOSQL_REQUIRE(0 < page_size, "page size cannot be zero");
+  }
 
   virtual ~Page() = default;
 
@@ -71,9 +75,9 @@ public:
 
   //! \brief Read data from a page, as a span.
   std::span<const std::byte> ReadFromPage(page_size_t offset, page_size_t size) const {
-    NOSQL_REQUIRE(
-        offset + size <= page_size_,
-        "ReadFromPage: offset + size = " << offset + size << " is greater than page size " << page_size_);
+    NOSQL_REQUIRE(offset + size <= page_size_,
+                  "ReadFromPage: offset + size = " << offset + size << " is greater than page size "
+                                                   << page_size_ << " on page " << page_number_);
     return {getPtr(offset), size};
   }
 
@@ -111,6 +115,8 @@ public:
   //  Other Page functions.
   // =================================================================================================
 
+  NO_DISCARD virtual std::unique_ptr<Page> NewHandle() const = 0;
+
   //! \brief Get the page number for this page.
   NO_DISCARD page_number_t GetPageNumber() const { return page_number_; }
 
@@ -141,9 +147,9 @@ protected:
   NO_DISCARD char* getChars() const { return reinterpret_cast<char*>(data_); }
   void setPageNumber(page_number_t page_number) { page_number_ = page_number; }
 
-  std::byte* data_;
-  page_number_t page_number_;
-  transaction_t transaction_number_;
+  std::byte* data_ {};
+  page_number_t page_number_ {};
+  transaction_t transaction_number_ {};
   page_size_t page_size_ = 0;
 };
 
@@ -164,13 +170,19 @@ public:
     return static_cast<page_size_t>(offset + data.size());
   }
 
+  NO_DISCARD std::unique_ptr<Page> NewHandle() const override {
+    auto page = std::make_unique<FreestandingPage>(page_number_, transaction_number_, page_size_);
+    page->data_buffer_ = data_buffer_;
+    return page;
+  }
+
 private:
   //! \brief The data is stored in the page structure itself, not in some other place referenced by the page.
-  std::unique_ptr<std::byte[]> data_buffer_;
+  std::shared_ptr<std::byte[]> data_buffer_;
 
   void resize(page_size_t size) {
     page_size_ = size;
-    data_buffer_ = std::make_unique<std::byte[]>(page_size_);
+    data_buffer_ = std::make_shared<std::byte[]>(page_size_);
     data_ = data_buffer_.get();
   }
 };
@@ -188,13 +200,16 @@ public:
   RCPage(page_size_t page_size, uint32_t descriptor_index, class PageCache* owning_cache) noexcept;
 
   //! \brief Release the page.
-  ~RCPage();
+  ~RCPage() override;
 
   //! \brief Write to a page. This registers the write with the page cache and WAL.
   page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data) override;
 
   //! \brief Set the data that the page references.
   void SetData(std::byte* data) { data_ = data; }
+
+  //! \brief Go back to the cache to get another handle to this page.
+  NO_DISCARD std::unique_ptr<Page> NewHandle() const override;
 
 private:
   //! \brief The page cache that owns this page.

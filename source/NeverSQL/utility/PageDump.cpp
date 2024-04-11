@@ -137,7 +137,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   out << "|  Hex dump of header:\n";
   out << lightning::formatting::Format(
       "|  {@BYELLOW}{}{@RESET}\n",
-      internal::HexDumpBytes(node.GetPage().GetSpan(0, header.GetPointersStart()), false));
+      internal::HexDumpBytes(node.GetPage()->GetSpan(0, header.GetPointersStart()), false));
 
   {
     std::fill_n(std::ostream_iterator<char>(out), header_width, '=');

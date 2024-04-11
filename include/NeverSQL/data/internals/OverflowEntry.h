@@ -29,6 +29,11 @@ public:
     return false;
   }
 
+  bool IsValid() const override {
+    // TODO: Implement.
+    return false;
+  }
+
 private:
   std::span<std::byte> data_;
 
