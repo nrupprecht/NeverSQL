@@ -178,12 +178,12 @@ public:
 
 private:
   //! \brief The data is stored in the page structure itself, not in some other place referenced by the page.
-  std::shared_ptr<std::byte[]> data_buffer_;
+  std::shared_ptr<std::vector<std::byte>> data_buffer_;
 
   void resize(page_size_t size) {
     page_size_ = size;
-    data_buffer_ = std::make_shared<std::byte[]>(page_size_);
-    data_ = data_buffer_.get();
+    data_buffer_ = std::make_shared<std::vector<std::byte>>(page_size_);
+    data_ = data_buffer_->data();
   }
 };
 
