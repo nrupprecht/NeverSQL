@@ -4,11 +4,11 @@
 
 #include "NeverSQL/data/internals/DatabaseEntry.h"
 // Other files.
+#include "NeverSQL/data/Document.h"
 #include "NeverSQL/data/btree/BTree.h"
 #include "NeverSQL/data/btree/EntryCreator.h"
 #include "NeverSQL/data/internals/OverflowEntry.h"
 #include "NeverSQL/data/internals/SinglePageEntry.h"
-#include "NeverSQL/data/Document.h"
 
 namespace neversql::internal {
 
@@ -54,7 +54,8 @@ std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
     entry_offset += sizeof(primary_key_t);
   }
 
-  LOG_SEV(Trace) << "ReadEntry: Start of cell data is at offset " << entry_offset << ".";
+  LOG_SEV(Trace) << "ReadEntry: Start of cell data is at offset " << entry_offset << " in page "
+                 << page->GetPageNumber() << ".";
 
   if (is_single_page) {
     return std::make_unique<SinglePageEntry>(entry_offset, std::move(page));
@@ -73,7 +74,7 @@ std::unique_ptr<Document> EntryToDocument(DatabaseEntry& entry) {
     buffer.Append(data);
   } while (entry.Advance());
   auto view = std::span {buffer.Data(), buffer.Size()};
- return neversql::ReadDocumentFromBuffer(view);
+  return ReadDocumentFromBuffer(view);
 }
 
 }  // namespace neversql::internal

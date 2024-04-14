@@ -22,6 +22,26 @@ enum class DataTypeEnum : int8_t {
   UInt64 = 10
 };
 
+inline std::string to_string(DataTypeEnum value) {
+  // clang-format off
+  using enum DataTypeEnum;
+  switch (value) {
+    case Null: return "Null";
+    case Double: return "Double";
+    case String: return "String";
+    case Document: return "Document";
+    case Array: return "Array";
+    case BinaryData: return "BinaryData";
+    case Boolean: return "Boolean";
+    case DateTime: return "DateTime";
+    case Int32: return "Int32";
+    case Int64: return "Int64";
+    case UInt64: return "UInt64";
+    default: return lightning::formatting::Format("<unknown, value = {}>", static_cast<int>(value));
+  }
+  // clang-format on
+}
+
 class Document;
 
 namespace detail {

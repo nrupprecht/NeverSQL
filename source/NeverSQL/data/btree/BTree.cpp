@@ -613,10 +613,11 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
             addElementToNode(new_node, store_data);
           }
           else if constexpr (std::is_same_v<T, DataNodeCell>) {
-            // NOTE: We only need to copy literally the entry in the page. In particular, it does not matter
-            // if the entry is the header for an overflow page.
-            store_data.entry_creator =
-                internal::MakeCreator<internal::SpanPayloadSerializer>(cell.SpanValue());
+            // Note: We only need to copy literally the entry in the page. In particular, it does not matter
+            //       if the entry is the header for an overflow page.
+            //       Use the entry copier, so we copy the correct flags.
+            store_data.entry_creator = std::make_unique<internal::EntryCopier>(cell.flags, cell.SpanValue());
+
             store_data.serialize_data_size = true;
             addElementToNode(new_node, store_data);
           }
@@ -735,7 +736,9 @@ void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> da
             }
           }
           else if constexpr (std::is_same_v<T, DataNodeCell>) {
-            // Entry copier copies the entire entry.
+            // Note: We only need to copy literally the entry in the page. In particular, it does not matter
+            //       if the entry is the header for an overflow page.
+            //       Use the entry copier, so we copy the correct flags.
             store_data.entry_creator = std::make_unique<internal::EntryCopier>(cell.flags, cell.SpanValue());
             store_data.serialize_data_size = true;
             NOSQL_ASSERT(addElementToNode(node_to_add_to, store_data),
