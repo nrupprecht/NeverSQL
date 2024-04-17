@@ -110,16 +110,7 @@ int main() {
     auto result = manager.Retrieve("elements", neversql::internal::SpanValue(name));
     if (result.IsFound()) {
       // Interpret the data as a document.
-
-      memory::MemoryBuffer<std::byte> buffer;
-      auto& entry = *result.entry;
-      do {
-        auto data = entry.GetData();
-        buffer.Append(data);
-      } while (entry.Advance());
-      auto view = std::span {buffer.Data(), buffer.Size()};
-
-      auto document = neversql::ReadDocumentFromBuffer(view);
+      auto document = EntryToDocument(*result.entry);
 
       LOG_SEV(Info) << formatting::Format(
           "Found key {:?} on page {:L}, search depth {}, value: \n{@BYELLOW}{}{@RESET}",
