@@ -8,11 +8,11 @@
 
 namespace neversql::internal {
 
-template<typename T>
-requires std::is_trivially_copyable_v<T>
-inline bool CompareTrivial(std::span<const std::byte> lhs, std::span<const std::byte> rhs) {
-  T lhs_value;
-  T rhs_value;
+template<typename Value_t>
+requires std::is_trivially_copyable_v<Value_t>
+bool CompareTrivial(std::span<const std::byte> lhs, std::span<const std::byte> rhs) {
+  Value_t lhs_value;
+  Value_t rhs_value;
   std::memcpy(&lhs_value, lhs.data(), sizeof(uint64_t));
   std::memcpy(&rhs_value, rhs.data(), sizeof(uint64_t));
   return lhs_value < rhs_value;

@@ -15,7 +15,6 @@
 #include "NeverSQL/data/btree/BTreeNodeMap.h"
 #include "NeverSQL/data/btree/EntryCreator.h"
 #include "NeverSQL/data/internals/DatabaseEntry.h"
-#include "NeverSQL/data/internals/DatabaseEntry.h"
 #include "NeverSQL/utility/DataTypes.h"
 
 namespace neversql {
@@ -58,7 +57,7 @@ struct StoreData {
   GeneralKey key;
 
   //! \brief Entry creator, which knows how to store the data inside the tree.
-  std::unique_ptr<internal::EntryCreator> entry_creator;
+  internal::EntryCreator* entry_creator;
 
   //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed
   //!        sizes that is known by the B-tree manager.
@@ -94,14 +93,14 @@ public:
   static std::unique_ptr<BTreeManager> CreateNewBTree(PageCache& page_cache, DataTypeEnum key_type);
 
   //! \brief Add a value with a specified key to the BTree.
-  void AddValue(GeneralKey key, std::unique_ptr<internal::EntryCreator>&& entry_creator);
+  void AddValue(GeneralKey key, internal::EntryCreator& entry_creator);
 
   //! \brief Add a value with an auto-incrementing key to the B-tree.
   //!
   //! Only works if the B-tree is configured to generate auto-incrementing keys.
   //!
   //! \param value The value payload to add to the B-tree.
-  void AddValue(std::unique_ptr<internal::EntryCreator>&& entry_creator);
+  void AddValue(internal::EntryCreator& entry_creator);
 
   //! \brief Get the root page number of the B-tree.
   page_number_t GetRootPageNumber() const noexcept { return root_page_; }
@@ -208,6 +207,21 @@ private:
   //! \return Returns a string representation of the key, implementation defined.
   std::string debugKey(GeneralKey key) const;
 
+  //! \brief Check whether a key is already present in a btree node.
+  bool isUniqueKey(BTreeNodeMap& node_map, const StoreData& data) const noexcept;
+
+  //! \brief Write flags to an page as part of creating a data entry.
+  static page_size_t writeFlags(Page& page,
+                                BTreePageHeader& header,
+                                internal::EntryCreator& entry_creator,
+                                page_size_t offset) noexcept;
+
+  //! \brief Write the key to a page as part of creating a data entry.
+  static page_size_t writeKey(Page& page,
+                              BTreePageHeader& header,
+                              page_size_t offset,
+                              GeneralKey key) noexcept;
+
   // =================================================================================================
   // Private member variables.
   // =================================================================================================
@@ -216,7 +230,6 @@ private:
   PageCache& page_cache_;
 
   //! \brief The page on which the B-tree index starts. Will be 0 if unassigned.
-  //!
   page_number_t root_page_ {};
 
   //! \brief The current page available for overflow entries. Zero if no page is being used.

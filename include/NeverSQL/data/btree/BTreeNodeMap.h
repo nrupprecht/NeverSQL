@@ -123,7 +123,7 @@ public:
   NO_DISCARD page_size_t GetNumPointers() const;
 
   //! \brief Get the amount of "de-fragmented" free space, that is, the amount of free space in between free
-  //! space start and free space end.
+  //!        space start and free space end.
   //!
   //! There may be more "fragmented" free space due to cells being erased, this is not counted here.
   //! \return The amount of free space in the node, in the free space section.
@@ -147,7 +147,7 @@ public:
 
 private:
   //! \brief Create a new BTreeNodeMap wrapping a page. No checks are done to see if the page is a valid
-  //! B-tree node.
+  //!        B-tree node.
   explicit BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept;
 
   //! \brief Get the header of the page.
@@ -163,7 +163,7 @@ private:
   std::optional<page_size_t> getCellByKey(GeneralKey key) const;
 
   //! \brief Get an offset to the start of the first entry whose primary key is greater than or equal to the
-  //! given key.
+  //!        given key.
   //!
   //! If the key cannot be found, returns std::nullopt. The the offsets are assumed to be ordered by the
   //! primary key of the cell that they refer to.
@@ -174,8 +174,9 @@ private:
   std::optional<std::pair<page_size_t, page_index_t>> getCellLowerBoundByPK(GeneralKey key) const;
 
   //! \brief If this is a pointers page, get the next page to search on, returning the page number and the
-  //! index of the pointer to the next page in the current page. If the page is the rightmost page, returns
-  //! the number of pointers as the index.
+  //!        index of the pointer to the next page in the current page.
+  //!
+  //! If the page is the rightmost page, returns the number of pointers as the index.
   //! If this is not a pointers page, raises and error.
   std::pair<page_number_t, page_index_t> searchForNextPageInPointersPage(GeneralKey key) const;
 
@@ -192,11 +193,11 @@ private:
   GeneralKey getKeyForNthCell(page_size_t cell_index) const;
 
   //! \brief Get the cell at the given offset, as a structure. If the node is a leaf node, LeafNodeCell is
-  //! returned. If the node is an interior node, InteriorNodeCell is returned.
+  //!        returned. If the node is an interior node, InteriorNodeCell is returned.
   std::variant<DataNodeCell, PointersNodeCell> getCell(page_size_t cell_offset) const;
 
   //! \brief Get the N-th cell in the node, as a structure. If the node is a leaf node, LeafNodeCell is
-  //! returned. If the node is an interior node, InteriorNodeCell is returned.
+  //!        returned. If the node is an interior node, InteriorNodeCell is returned.
   std::variant<DataNodeCell, PointersNodeCell> getNthCell(page_size_t cell_number) const;
 
   //! \brief Sort the keys in the node by the primary key they refer to.
@@ -209,6 +210,10 @@ private:
   //! \param key
   //! \return string representation of the key, implementation defined.
   std::string debugKey(GeneralKey key) const;
+
+  // =================================================================================================
+  // Private member variables.
+  // =================================================================================================
 
   //! \brief The underlying page, that this class interprets as a B-tree node.
   std::unique_ptr<Page> page_;

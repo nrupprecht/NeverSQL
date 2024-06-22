@@ -17,19 +17,24 @@ namespace neversql::internal {
 //!        exact layout of the data (e.g. whether it is stored in a leaf node or in an overflow page).
 class DatabaseEntry {
 public:
+  virtual ~DatabaseEntry() = default;
+
   //! \brief Get the entry data in the current focus of the entry.
+  //!
+  //! This, along with `Advance` and `IsValid`, allow `DatabaseEntry` to be used as an iterator or generator.
   virtual std::span<const std::byte> GetData() const noexcept = 0;
 
   //! \brief Go to the next part of the database entry. Returns true if there was another entry to go to.
   virtual bool Advance() = 0;
-
-  virtual ~DatabaseEntry() = default;
 
   //! \brief Do a check of whether the entry is valid.
   virtual bool IsValid() const = 0;
 };
 
 //! \brief Read an entry, starting with the given offset in the page.
+//!
+//! This function is responsible for recognizing what (concrete) type of entry is stored in the page, and
+//! creating the appropriate object to represent it.
 std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
                                          std::unique_ptr<const Page>&& page,
                                          const BTreeManager* btree_manager);

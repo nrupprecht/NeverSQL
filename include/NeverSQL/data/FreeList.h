@@ -48,7 +48,7 @@ public:
 
 private:
   //! \brief Deque of freed pages.
-  std::deque<page_number_t> freed_pages_ {};
+  std::deque<page_number_t> freed_pages_;
 
   //! \brief The total number of allocated pages, also, the next page number to be allocated.
   page_number_t next_page_number_ = 0;

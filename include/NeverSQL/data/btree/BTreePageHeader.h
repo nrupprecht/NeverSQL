@@ -115,6 +115,9 @@ public:
   //! \brief Check whether this page is the root page.
   NO_DISCARD bool IsRootPage() const noexcept { return (GetFlags() & 0b10) != 0; }
 
+  //! \brief Check whether this page is an overflow page.
+  NO_DISCARD bool IsOverflowPage() const noexcept { return (GetFlags() & OVERFLOW_PAGE_FLAG) != 0; }
+
   //! \brief Check whether the key sizes are specified for this BTree.
   NO_DISCARD bool AreKeySizesSpecified() const noexcept { return (GetFlags() & 0b100) != 0; }
 

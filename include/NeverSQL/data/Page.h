@@ -33,8 +33,7 @@ public:
 
   //! \brief Create a placeholder page that has not yet been mapped to a page in the database.
   explicit Page(page_size_t page_size)
-      : page_number_(0)
-      , page_size_(page_size) {
+      : page_size_(page_size) {
     NOSQL_REQUIRE(0 < page_size, "page size cannot be zero");
   }
 

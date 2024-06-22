@@ -39,7 +39,9 @@ private:
   //! \brief The size of the page in bytes, computed by page_size_ = 2 ^ page_size_power_.
   page_size_t page_size_ = 4096;
 
+  // =================================================================================================
   // Other data.
+  // =================================================================================================
 
   //! \brief The page on which the free list starts. Will be 0 if unassigned.
   page_number_t free_list_page_ {};

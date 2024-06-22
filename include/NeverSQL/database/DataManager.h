@@ -84,7 +84,7 @@ private:
   mutable PageCache page_cache_;
 
   //! \brief Cache the collection index.
-  std::unique_ptr<BTreeManager> collection_index_;
+  std::unique_ptr<BTreeManager> collection_index_ {};
 
   //! \brief Cache the collections that are in the database.
   std::map<std::string, std::unique_ptr<BTreeManager>> collections_;

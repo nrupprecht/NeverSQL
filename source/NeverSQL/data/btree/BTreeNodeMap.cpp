@@ -56,8 +56,10 @@ SpaceRequirement BTreeNodeMap::CalculateSpaceRequirements(GeneralKey key) const 
 
   // Given the current free space and the space needed for the pointer and the other parts of the cell, what
   // is the maximum amount of space available for the entry (not counting any page entry space restrictions).
+  auto free_space = header.GetDefragmentedFreeSpace();
+  auto helper_space = pointer_space + cell_header_space;
   requirement.max_entry_space =
-      static_cast<page_size_t>(header.GetDefragmentedFreeSpace() - pointer_space - cell_header_space);
+      helper_space < free_space ? static_cast<page_size_t>(free_space - helper_space) : 0;
   requirement.pointer_space = pointer_space;
   requirement.cell_header_space = cell_header_space;
 
@@ -221,8 +223,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
   }
 
   if (getHeader().IsPointersPage()) {
-    return PointersNodeCell {.key = key,
-                             .page_number = page_->Read<page_number_t>(entry_offset)};
+    return PointersNodeCell {.key = key, .page_number = page_->Read<page_number_t>(entry_offset)};
   }
 
   // If this is an overflow header, it is 16 bytes. Otherwise, the size of the entry is stored in the next 2
@@ -233,8 +234,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
                             potential_entry_size)
       : page_->ReadFromPage(entry_offset, 16);
 
-  return DataNodeCell {
-      .flags = flags, .key = key, .data = entry_data};
+  return DataNodeCell {.flags = flags, .key = key, .data = entry_data};
 }
 
 std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_t cell_number) const {

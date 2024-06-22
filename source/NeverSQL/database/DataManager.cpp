@@ -12,13 +12,11 @@ namespace neversql {
 
 DataManager::DataManager(const std::filesystem::path& database_path)
     : data_access_layer_(database_path)
-    , page_cache_(database_path / "walfiles", 256 /* Just a random number for now */, &data_access_layer_)
-    , collection_index_(nullptr) {
+    , page_cache_(database_path / "walfiles", 256 /* Just a random number for now */, &data_access_layer_) {
   // TODO: Make the meta page more independent from the database.
-  auto&& meta = data_access_layer_.GetMeta();
 
   // Check if the database was just initialized.
-  if (meta.GetIndexPage() == 0) {
+  if (auto&& meta = data_access_layer_.GetMeta(); meta.GetIndexPage() == 0) {
     // No index page has been created yet. Create a new B-tree for the index.
     collection_index_ = BTreeManager::CreateNewBTree(page_cache_, DataTypeEnum::String);
 
@@ -59,7 +57,7 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
   document->AddElement("index_page_number", IntegralValue {page_number});
 
   auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
-  collection_index_->AddValue(internal::SpanValue(collection_name), std::move(creator));
+  collection_index_->AddValue(internal::SpanValue(collection_name), creator);
 
   // Cache the collection in the data manager.
   collections_.emplace(collection_name, std::move(btree));
@@ -72,7 +70,7 @@ void DataManager::AddValue(const std::string& collection_name, GeneralKey key, c
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
   auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
-  it->second->AddValue(key, std::move(creator));
+  it->second->AddValue(key, creator);
 }
 
 SearchResult DataManager::Search(const std::string& collection_name, GeneralKey key) const {
@@ -98,7 +96,7 @@ void DataManager::AddValue(const std::string& collection_name, const Document& d
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
   auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
-  it->second->AddValue(std::move(creator));
+  it->second->AddValue(creator);
 }
 
 SearchResult DataManager::Search(const std::string& collection_name, primary_key_t key) const {
@@ -119,13 +117,13 @@ std::set<std::string> DataManager::GetCollectionNames() const {
 
 BTreeManager::Iterator DataManager::Begin(const std::string& collection_name) const {
   auto it = collections_.find(collection_name);
-  auto& manager = *it->second;
+  const auto& manager = *it->second;
   return manager.begin();
 }
 
 BTreeManager::Iterator DataManager::End(const std::string& collection_name) const {
   auto it = collections_.find(collection_name);
-  auto& manager = *it->second;
+  const auto& manager = *it->second;
   return manager.end();
 }
 

@@ -10,6 +10,7 @@
 namespace neversql {
 class Page;
 class BTreeManager;
+class BTreeNodeMap;
 }  // namespace neversql
 
 namespace neversql::internal {
@@ -120,32 +121,40 @@ public:
   //! \brief Create an entry, starting with the given offset in the page.
   //!
   //! \return Returns the offset to the place after the entry, in the original page (even if an overflow page
-  //!         was created and data was added to other pages.
+  //!         was created and data was added to other pages).
   page_size_t Create(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
 
   //! \brief Return whether the EntryCreator is going to create overflow pages.
   bool GetNeedsOverflow() const noexcept { return overflow_page_needed_; }
 
 protected:
-  void createOverflowEntry(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
+  page_size_t createOverflowEntry(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
   page_size_t createSinglePageEntry(page_size_t starting_offset, Page* page);
+  page_size_t createOverflowDataEntry(page_size_t starting_offset, Page* page);
+
+  void writeOverflowData(primary_key_t overflow_key,
+                         page_number_t overflow_page_number,
+                         BTreeManager* btree_manager);
 
   bool overflow_page_needed_ = false;
   bool serialize_size_ = true;
+
+  primary_key_t next_overflow_page_ {};
+  entry_size_t next_overflow_entry_size_ {};
 
   std::unique_ptr<EntryPayloadSerializer> payload_;
 };
 
 //! \brief Create an entry creator with a payload of type Payload_t.
 template<typename Payload_t, typename... Args_t>
-std::unique_ptr<EntryCreator> MakeCreator(Args_t&&... args) {
-  return std::make_unique<EntryCreator>(std::make_unique<Payload_t>(std::forward<Args_t>(args)...));
+auto MakeCreator(Args_t&&... args) {
+  return EntryCreator(std::make_unique<Payload_t>(std::forward<Args_t>(args)...));
 }
 
 //! \brief Create an entry creator with a payload of type Payload_t that does not serialize the entry size.
 template<typename Payload_t, typename... Args_t>
-std::unique_ptr<EntryCreator> MakeSizelessCreator(Args_t&&... args) {
-  return std::make_unique<EntryCreator>(std::make_unique<Payload_t>(std::forward<Args_t>(args)...), false);
+auto MakeSizelessCreator(Args_t&&... args) {
+  return EntryCreator(std::make_unique<Payload_t>(std::forward<Args_t>(args)...), false);
 }
 
 }  // namespace neversql::internal
