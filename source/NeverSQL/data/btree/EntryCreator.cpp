@@ -22,7 +22,7 @@ page_size_t EntryCreator::GetMinimumEntrySize() const {
 
 page_size_t EntryCreator::GetRequestedSize(page_size_t maximum_entry_size) {
   if (next_overflow_entry_size_) {
-    return next_overflow_entry_size_ + sizeof(primary_key_t) + sizeof(entry_size_t);
+    return next_overflow_entry_size_ + sizeof(primary_key_t) + sizeof(page_size_t);
   }
 
   NOSQL_REQUIRE(GetMinimumEntrySize() <= maximum_entry_size,
@@ -43,9 +43,16 @@ page_size_t EntryCreator::GetRequestedSize(page_size_t maximum_entry_size) {
 
 std::byte EntryCreator::GenerateFlags() const {
   using enum EntryFlags;
-  // The note flag is set if the entry is an overflow page entry or the entry size is serialized.
-  uint8_t flags = IsActive | (serialize_size_ || overflow_page_needed_ ? NoteFlag : 0)
-      | (overflow_page_needed_ ? 0 : IsSinglePageEntry);
+
+  uint8_t flags =
+      // The page is active.
+      IsActive
+      // The note flag is set if the entry is an overflow page entry or the entry size is serialized.
+      | (serialize_size_ || overflow_page_needed_ ? NoteFlag : 0)
+      // An entry on an overflow page should be loaded as a single page entry, since it just contains the data
+      // for this part of the overflow page, plus some additional data to find the next overflow page (if
+      // applicable) and the logic for traversing all the pages is handled elsewhere.
+      | (overflow_page_needed_ && next_overflow_entry_size_ == 0 ? 0 : IsSinglePageEntry);
   return std::byte {flags};
 }
 
@@ -118,15 +125,28 @@ page_size_t EntryCreator::createSinglePageEntry(page_size_t starting_offset, Pag
 }
 
 page_size_t EntryCreator::createOverflowDataEntry(page_size_t starting_offset, Page* page) {
-  LOG_SEV(Trace) << "Writing data to overflow page at " << starting_offset << ", will write "
-                 << next_overflow_entry_size_ << " bytes.";
+  LOG_SEV(Trace) << "Writing data to overflow page (page " << page->GetPageNumber() << ") at "
+                 << starting_offset << ", will write " << next_overflow_entry_size_ << " bytes.";
   auto offset = starting_offset;
-  offset = page->WriteToPage(offset, next_overflow_page_);        // 8 bytes
-  offset = page->WriteToPage(offset, next_overflow_entry_size_);  // 2 bytes
+
+  // Since this will be read as a single page entry (its just a special single page entry), we need to first
+  // serialize the entry size, so the Entry reader will work properly.
+  const auto entry_size = static_cast<page_size_t>(sizeof(primary_key_t) + next_overflow_entry_size_);
+  LOG_SEV(Trace) << "Writing entry size " << entry_size << " for single page entry at " << offset << ".";
+  offset = page->WriteToPage(offset, entry_size);
+
+  // First part of the overflow entry is the next page number, which is 0 if there is no next page.
+  offset = page->WriteToPage(offset, next_overflow_page_);  // 8 bytes
+
+  // Then, all the data is written.
+  LOG_SEV(Trace) << "Writing overflow data to offset " << offset << " on page " << page->GetPageNumber()
+                 << ".";
   for (std::size_t i = 0; i < next_overflow_entry_size_; ++i) {
     offset = page->WriteToPage(offset, payload_->GetNextByte());
   }
-  LOG_SEV(Trace) << "Done writing data to overflow page, offset is " << offset << ".";
+  LOG_SEV(Trace) << "Done writing data to overflow page (page " << page->GetPageNumber() << "), offset is "
+                 << offset << ".";
+
   return offset;
 }
 
@@ -156,7 +176,7 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
 
   // Helper lambda to load the next overflow page, making sure that there is enough space in the page.
   auto load_next_overflow_page = [&] {
-    auto remaining_space = static_cast<page_size_t>(total_size - serialized_size);
+    const auto remaining_space = static_cast<page_size_t>(total_size - serialized_size);
     for (;;) {
       next_overflow_page_number = btree_manager->getNextOverflowPage();
       next_overflow_page = btree_manager->loadNodePage(next_overflow_page_number);
@@ -169,24 +189,31 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
     }
   };
 
+  // This here is only a check if the initial overflow page was actually not suitable. It is not responsible
+  // for loading the "next" page.
+  auto max_entry_space = overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
+  if (max_entry_space < header_size) {
+    load_next_overflow_page();
+    overflow_page = std::move(*next_overflow_page);
+    next_overflow_page_number = 0;
+  }
+
+  // Keep loading pages and storing data as long as is necessary.
   while (payload_->HasData()) {
     // Check how much space is available in the current page. If there is not enough space in the overflow
     // page, we will need another overflow page.
-    auto max_entry_space = overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
-    if (max_entry_space < header_size) {
-      load_next_overflow_page();
-      overflow_page = std::move(*next_overflow_page);
-      overflow_page_number = next_overflow_page_number;
-    }
+    max_entry_space = overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
 
-    const bool needs_next_page = max_entry_space - header_size < total_size - serialized_size;
+    const bool needs_next_page = std::cmp_less(max_entry_space - header_size, total_size - serialized_size);
     // If necessary, load the next overflow page.
     if (needs_next_page) {
       load_next_overflow_page();
+      LOG_SEV(Trace) << "Another overflow page will be needed, page will be " << next_overflow_page_number
+                     << ".";
     }
     LOG_SEV(Trace) << "Max entry space is " << max_entry_space << ", remaining entry data size is "
                    << total_size - serialized_size << ".";
-    
+
     // We need to write the header, plus all the data we can.
     next_overflow_entry_size_ =
         std::min<page_size_t>(max_entry_space - header_size, total_size - serialized_size);
@@ -202,7 +229,7 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
     if (needs_next_page) {
       // Cue up the next page.
       overflow_page = std::move(*next_overflow_page);
-      overflow_page_number = next_overflow_page_number;
+      next_overflow_page_number = 0;  // As far as we know, there is no next overflow page.
     }
   }
 

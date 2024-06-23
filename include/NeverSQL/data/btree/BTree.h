@@ -20,8 +20,9 @@
 namespace neversql {
 
 namespace internal {
-// Forward declare, friend of BTreeManager.
+// Forward declare friends of BTreeManager.
 class EntryCreator;
+class OverflowEntry;
 }  // namespace internal
 
 //! \brief Structure used to represent a position in the B-tree.
@@ -85,6 +86,8 @@ class BTreeManager {
   friend class DataManager;
 
   friend class internal::EntryCreator;
+
+  friend class internal::OverflowEntry;
 
 public:
   explicit BTreeManager(page_number_t root_page, PageCache& page_cache);

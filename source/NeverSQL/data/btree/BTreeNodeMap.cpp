@@ -81,6 +81,22 @@ bool BTreeNodeMap::IsRootPage() const noexcept {
   return getHeader().IsRootPage();
 }
 
+std::unique_ptr<internal::DatabaseEntry> BTreeNodeMap::GetEntry(GeneralKey key,
+                                                                const BTreeManager* btree_manager) const {
+  if (!getHeader().IsDataPage()) {
+    return nullptr;
+  }
+  if (const auto cell_offset = getCellByKey(key)) {
+    // Have to pass in a new page handle to read entry.
+    return internal::ReadEntry(*cell_offset, GetPage()->NewHandle(), btree_manager);
+  }
+  return nullptr;
+}
+
+std::optional<page_size_t> BTreeNodeMap::GetOffset(GeneralKey key) const {
+  return getCellByKey(key);
+}
+
 BTreeNodeMap::BTreeNodeMap(std::unique_ptr<Page>&& page) noexcept
     : page_(std::move(page)) {}
 

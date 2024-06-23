@@ -21,6 +21,7 @@ inline constexpr uint8_t ROOT_PAGE_FLAG = 0x2;
 inline constexpr uint8_t KEY_SIZES_SERIALIZED_FLAG = 0x4;
 inline constexpr uint8_t OVERFLOW_PAGE_FLAG = 0x8;
 
+// clang-format off
 //! \brief The header for a B-tree page.
 //!
 //! Sections and pointers to end of section (one past):
@@ -51,7 +52,7 @@ inline constexpr uint8_t OVERFLOW_PAGE_FLAG = 0x8;
 //! |   1 | R     | Root node (0 = no, 1 = yes). The root node has this flag set to true. |
 //! |   2 | K     | Key sizes specified (0 = no, 1 = yes). The key size, if serialized, is a 16 bit integer. |
 //! |   3 | V     | Is overflow page (0 = no, 1 = yes). |
-//!
+// clang-format on
 class BTreePageHeader {
   friend class BTreeNodeMap;
 
@@ -109,7 +110,7 @@ public:
   NO_DISCARD page_size_t GetDefragmentedFreeSpace() const { return GetFreeEnd() - GetFreeStart(); }
 
   //! \brief Check whether this page is a pointers page, that is, whether it only stores pointers to other
-  //! pages instead of storing data.
+  //!        pages instead of storing data.
   NO_DISCARD bool IsPointersPage() const noexcept { return (GetFlags() & 0b1) != 0; }
 
   //! \brief Check whether this page is the root page.
@@ -117,6 +118,9 @@ public:
 
   //! \brief Check whether this page is an overflow page.
   NO_DISCARD bool IsOverflowPage() const noexcept { return (GetFlags() & OVERFLOW_PAGE_FLAG) != 0; }
+
+  //! \brief Check whether this is a data page - either an overflow or leaf page.
+  NO_DISCARD bool IsDataPage() const noexcept { return !IsPointersPage(); }
 
   //! \brief Check whether the key sizes are specified for this BTree.
   NO_DISCARD bool AreKeySizesSpecified() const noexcept { return (GetFlags() & 0b100) != 0; }

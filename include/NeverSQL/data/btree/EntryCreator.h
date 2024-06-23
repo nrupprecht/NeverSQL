@@ -125,7 +125,7 @@ public:
   page_size_t Create(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);
 
   //! \brief Return whether the EntryCreator is going to create overflow pages.
-  bool GetNeedsOverflow() const noexcept { return overflow_page_needed_; }
+  bool GetNeedsOverflow() const noexcept { return overflow_page_needed_ && next_overflow_entry_size_ == 0; }
 
 protected:
   page_size_t createOverflowEntry(page_size_t starting_offset, Page* page, BTreeManager* btree_manager);

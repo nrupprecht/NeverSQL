@@ -37,6 +37,7 @@ struct DataNodeCell {
   //! \brief Get a span of the value in the cell.
   NO_DISCARD std::span<const std::byte> SpanValue() const noexcept { return data; }
 
+  //! \brief Get the size of the cell.
   NO_DISCARD page_size_t GetCellSize() const noexcept {
     return static_cast<page_size_t>(
         // Flags.
@@ -51,6 +52,7 @@ struct DataNodeCell {
         + data.size());
   }
 
+  //! \brief Get the size of the data payload of the cell.
   NO_DISCARD page_size_t GetDataSize() const noexcept { return static_cast<page_size_t>(data.size()); }
 };
 
@@ -64,6 +66,7 @@ struct PointersNodeCell {
   //! \note The data of a pointers node cell (the entry) is just the page number.
   const page_number_t page_number;
 
+  //! \brief Get the size of the cell.
   NO_DISCARD page_size_t GetCellSize() const noexcept {
     return static_cast<page_size_t>(
         // Flags.
@@ -76,9 +79,11 @@ struct PointersNodeCell {
         + sizeof(page_number_t));
   }
 
+  //! \brief Get the size of the data payload of the cell.
   NO_DISCARD static page_size_t GetDataSize() noexcept { return sizeof(page_number_t); }
 };
 
+//! \brief Structure that represents the space requirements for adding a new entry to a node.
 struct SpaceRequirement {
   //! \brief The amount of space that the pointer needs.
   page_size_t pointer_space;
@@ -117,6 +122,8 @@ public:
 
   //! \brief Get the underlying page.
   NO_DISCARD const std::unique_ptr<Page>& GetPage() const;
+
+  //! \brief Get the underlying page.
   NO_DISCARD std::unique_ptr<Page>& GetPage();
 
   //! \brief Get the number of pointers (and therefore cells) in the node.
@@ -126,6 +133,7 @@ public:
   //!        space start and free space end.
   //!
   //! There may be more "fragmented" free space due to cells being erased, this is not counted here.
+  //!
   //! \return The amount of free space in the node, in the free space section.
   NO_DISCARD page_size_t GetDefragmentedFreeSpace() const;
 
@@ -139,11 +147,17 @@ public:
   NO_DISCARD std::optional<GeneralKey> GetLargestKey() const;
 
   //! \brief Check whether this page is a pointers page, that is, whether it only stores pointers to other
-  //! pages instead of storing data.
+  //!        pages instead of storing data.
   NO_DISCARD bool IsPointersPage() const noexcept;
 
   //! \brief Check whether this page is the root page.
   NO_DISCARD bool IsRootPage() const noexcept;
+
+  //! \brief Get an entry from a particular page.
+  std::unique_ptr<internal::DatabaseEntry> GetEntry(GeneralKey key, const BTreeManager* btree_manager) const;
+
+  //! \brief Alias for getCellByKey, finds the offset to the start of the cell with the given primary key.
+  std::optional<page_size_t> GetOffset(GeneralKey key) const;
 
 private:
   //! \brief Create a new BTreeNodeMap wrapping a page. No checks are done to see if the page is a valid
@@ -170,14 +184,14 @@ private:
   //!
   //! \param key The primary key to search for.
   //! \return The offset to the start of the cell and index of the cell in the page (index of the pointers
-  //! cell), or std::nullopt if there are no keys greater than or equal to the given key.
+  //!         cell), or std::nullopt if there are no keys greater than or equal to the given key.
   std::optional<std::pair<page_size_t, page_index_t>> getCellLowerBoundByPK(GeneralKey key) const;
 
   //! \brief If this is a pointers page, get the next page to search on, returning the page number and the
   //!        index of the pointer to the next page in the current page.
   //!
-  //! If the page is the rightmost page, returns the number of pointers as the index.
-  //! If this is not a pointers page, raises and error.
+  //! \note If the page is the rightmost page, returns the number of pointers as the index.
+  //! \error If this is not a pointers page, raises and error.
   std::pair<page_number_t, page_index_t> searchForNextPageInPointersPage(GeneralKey key) const;
 
   //! \brief Get a span of the offsets in the node.

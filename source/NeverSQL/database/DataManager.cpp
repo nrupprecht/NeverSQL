@@ -69,7 +69,7 @@ void DataManager::AddValue(const std::string& collection_name, GeneralKey key, c
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
-  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(document);
   it->second->AddValue(key, creator);
 }
 
@@ -95,7 +95,7 @@ void DataManager::AddValue(const std::string& collection_name, const Document& d
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
-  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(document);
   it->second->AddValue(creator);
 }
 
@@ -133,8 +133,8 @@ bool DataManager::HexDumpPage(page_number_t page_number,
   if (data_access_layer_.GetNumPages() <= page_number) {
     return false;
   }
-  auto page = page_cache_.GetPage(page_number);
-  auto view = page->GetView();
+  const auto page = page_cache_.GetPage(page_number);
+  const auto view = page->GetView();
   std::istringstream stream(std::string {view});
   HexDump(stream, out, options);
   return true;
