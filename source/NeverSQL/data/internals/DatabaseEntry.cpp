@@ -16,8 +16,8 @@ std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
                                          std::unique_ptr<const Page>&& page,
                                          const BTreeManager* btree_manager) {
   // TODO: This function takes care of some things that are the B-tree's responsibility, i.e., key related
-  //   things. These things should probably be moved to the B-tree, and the offset should be at the start of
-  //   the entry, and the flags are passed in.
+  //       things. These things should probably be moved to the B-tree, and the offset should be at the start
+  //       of the entry, and the flags are passed in.
 
   // Single page entry.
   // [flags: 1 byte]

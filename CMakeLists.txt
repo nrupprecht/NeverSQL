@@ -54,6 +54,7 @@ add_library(
         source/NeverSQL/data/btree/EntryCreator.cpp
         source/NeverSQL/data/btree/EntryCopier.cpp
         source/NeverSQL/data/internals/DatabaseEntry.cpp
+        source/NeverSQL/data/internals/OverflowEntry.cpp
         source/NeverSQL/data/internals/DocumentPayloadSerializer.cpp
         source/NeverSQL/database/DataManager.cpp
         source/NeverSQL/recovery/WriteAheadLog.cpp

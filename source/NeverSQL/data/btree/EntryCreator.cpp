@@ -84,19 +84,18 @@ page_size_t EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t start
   // Get an overflow entry number.
   auto overflow_key = btree_manager->getNextOverflowEntryNumber();
   offset = page->WriteToPage(offset, overflow_key);
+  LOG_SEV(Trace) << "Creating overflow entry with overflow key " << overflow_key << ".";
 
   // For each subsequent overflow page:
   // [next overflow page number: 8 bytes]? [entry_size: 2 bytes] [entry_data: entry_size bytes]
   // If there is no next overflow page, the next overflow page number is 0.
 
-  // TODO(Nate): Whose job is it to make sure that an overflow page always has at least the minimum amount of
-  //             space required?
-  auto overflow_page_number = btree_manager->getCurrentOverflowPage();
+  // Get the overflow page, making sure that we go to a new page if ther would not be enough space on the
+  // current page.
+  auto overflow_page_number = loadOverflowPage(overflow_key, btree_manager);
 
   // Write the overflow page number.
   offset = page->WriteToPage(offset, overflow_page_number);
-
-  // TODO: Write actual data to the overflow pages.
   writeOverflowData(overflow_key, overflow_page_number, btree_manager);
 
   // Return the offset after the entry on the *primary* page (not any of the overflow pages).
@@ -169,11 +168,6 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
   // [next overflow page number: 8 bytes]? [entry_size: 2 bytes]? [entry_data: entry_size bytes]
   constexpr page_size_t header_size = sizeof(primary_key_t) + sizeof(entry_size_t);
 
-  // To keep the overflow page from getting too small, if there is not either enough space for the entire
-  // remaining data to fit in, or at least this much space, we go to the next overflow page even if there is
-  // a little bit pf space left on the page.
-  constexpr page_size_t min_entry_capacity = 16;
-
   // Helper lambda to load the next overflow page, making sure that there is enough space in the page.
   auto load_next_overflow_page = [&] {
     const auto remaining_space = static_cast<page_size_t>(total_size - serialized_size);
@@ -182,7 +176,7 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
       next_overflow_page = btree_manager->loadNodePage(next_overflow_page_number);
       const auto max_entry_space =
           next_overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
-      if (header_size + std::min(min_entry_capacity, remaining_space) < max_entry_space) {
+      if (header_size + std::min(min_overflow_entry_capacity_, remaining_space) < max_entry_space) {
         LOG_SEV(Trace) << "Found suitable overflow page, page " << next_overflow_page_number << ".";
         break;  // Found a suitable page.
       }
@@ -196,6 +190,7 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
     load_next_overflow_page();
     overflow_page = std::move(*next_overflow_page);
     next_overflow_page_number = 0;
+    LOG_SEV(Trace) << "Initial overflow page was not suitable, loading new page.";
   }
 
   // Keep loading pages and storing data as long as is necessary.
@@ -234,6 +229,38 @@ void EntryCreator::writeOverflowData(primary_key_t overflow_key,
   }
 
   LOG_SEV(Debug) << "Done creating overflow entry.";
+}
+
+page_number_t EntryCreator::loadOverflowPage(primary_key_t overflow_key, BTreeManager* btree_manager) {
+  auto overflow_page_number = btree_manager->getCurrentOverflowPage();
+  auto overflow_page = btree_manager->loadNodePage(overflow_page_number);
+
+  // Convert the overflow_key, as a primary_key_t, to a GeneralKey
+  GeneralKey general_overflow_key = SpanValue(overflow_key);
+
+  // [next overflow page number: 8 bytes]? [entry_size: 2 bytes]? [entry_data: entry_size bytes]
+  constexpr page_size_t header_size = sizeof(primary_key_t) + sizeof(entry_size_t);
+
+  // Helper lambda to load the next overflow page, making sure that there is enough space in the page.
+  auto load_next_overflow_page = [&] {
+    for (;;) {
+      overflow_page_number = btree_manager->getNextOverflowPage();
+      overflow_page = btree_manager->loadNodePage(overflow_page_number);
+      const auto max_entry_space =
+          overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
+      if (header_size + min_overflow_entry_capacity_ < max_entry_space) {
+        LOG_SEV(Trace) << "Found suitable overflow page, page " << overflow_page_number << ".";
+        return;
+      }
+    }
+  };
+
+  auto max_entry_space = overflow_page->CalculateSpaceRequirements(general_overflow_key).max_entry_space;
+  if (max_entry_space < header_size) {
+    LOG_SEV(Trace) << "Initial overflow page was not suitable, loading new page.";
+    load_next_overflow_page();
+  }
+  return overflow_page_number;
 }
 
 }  // namespace neversql::internal

@@ -5,69 +5,37 @@
 #pragma once
 
 #include "NeverSQL/data/internals/DatabaseEntry.h"
+#include "NeverSQL/data/btree/BTreeNodeMap.h"
 
 namespace neversql::internal {
 
 //! \brief Represents an entry that is stored across one or more overflow pages.
-class OverflowEntry : public DatabaseEntry {
+class OverflowEntry final : public DatabaseEntry {
 public:
-  OverflowEntry([[maybe_unused]] std::span<const std::byte> entry_header,
-                [[maybe_unused]] const BTreeManager* btree_manager)
-      : btree_manager_(btree_manager) {
-    // Get information from the header, get the first overflow page.
-    auto overflow_key = entry_header.subspan(0, 8);
-    auto overflow_page_number = entry_header.subspan(8, 8);
+  OverflowEntry(std::span<const std::byte> entry_header,
+                const BTreeManager* btree_manager);
 
-    // Convert the key and page number to the correct types.
-    overflow_key_ = *reinterpret_cast<const primary_key_t*>(overflow_key.data());
-    auto page_number = *reinterpret_cast<const page_number_t*>(overflow_page_number.data());
+  std::span<const std::byte> GetData() const noexcept override;
 
-    // Load up the first overflow page.
-    node_ = btree_manager_->loadNodePage(page_number);
+  bool Advance() override;
 
-    setup();
-  }
-
-  std::span<const std::byte> GetData() const noexcept override {
-    const auto entry = node_->GetEntry(SpanValue(overflow_key_), btree_manager_);
-    const auto data = entry->GetData();
-    // Bypass next page (first sizeof(page_number_t) bytes), just return the data.
-    return data.subspan(sizeof(page_number_t));
-  }
-
-  bool Advance() override {
-    if (next_page_number_ == 0) {
-      return false;
-    }
-
-    node_ = btree_manager_->loadNodePage(next_page_number_);
-    setup();
-
-    return true;
-  }
-
-  bool IsValid() const override { return node_.has_value(); }
+  bool IsValid() const override;
 
 private:
-  void setup() {
-    if (!IsValid()) {
-      return;
-    }
+  //! \brief Set up the data for the current overflow page.
+  void setup();
 
-    const auto entry = node_->GetEntry(SpanValue(overflow_key_), btree_manager_);
-    NOSQL_ASSERT(
-        entry,
-        "could not find entry for overflow key " << overflow_key_ << " in page " << node_->GetPageNumber());
-    const auto data = entry->GetData();
-    const auto next_page_span = data.subspan(0, sizeof(primary_key_t));
-    next_page_number_ = *reinterpret_cast<const page_number_t*>(next_page_span.data());
-  }
-
+  //! \brief The overflow key for the overflow entry.
   primary_key_t overflow_key_ = 0;
+
+  //! \brief The next page that part of the overflow entry is on.
   page_number_t next_page_number_ = 0;
 
+  //! \brief A tree manager, which lets the entry load new pages, getting the next part of the overflow entry
+  //!        if it is on more than one page.
   const BTreeManager* btree_manager_;
 
+  //! \brief The current node that the overflow entry is on.
   std::optional<BTreeNodeMap> node_;
 };
 

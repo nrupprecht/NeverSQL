@@ -132,9 +132,18 @@ protected:
   page_size_t createSinglePageEntry(page_size_t starting_offset, Page* page);
   page_size_t createOverflowDataEntry(page_size_t starting_offset, Page* page);
 
+  //! \brief Load the current overflow page, switching to the next page if the current page does not have
+  //!        the minimum allowed amount of space.
+  static page_number_t loadOverflowPage(primary_key_t overflow_key, BTreeManager* btree_manager);
+
   void writeOverflowData(primary_key_t overflow_key,
                          page_number_t overflow_page_number,
                          BTreeManager* btree_manager);
+
+  //! \brief To keep the overflow page from getting too small, if there is not either enough space for the
+  //!        entire remaining data to fit in, or at least this much space, we go to the next overflow page
+  //!        even if there is a little bit pf space left on the page.
+  constexpr static page_size_t min_overflow_entry_capacity_ = 16;
 
   bool overflow_page_needed_ = false;
   bool serialize_size_ = true;
