@@ -102,7 +102,7 @@ public:
   //!
   //! Only works if the B-tree is configured to generate auto-incrementing keys.
   //!
-  //! \param value The value payload to add to the B-tree.
+  //! \param entry_creator The entry creator that knows how to create an entry in the btree.
   void AddValue(internal::EntryCreator& entry_creator);
 
   //! \brief Get the root page number of the B-tree.
@@ -116,6 +116,13 @@ public:
     using reference = value_type&;
     using iterator_category = std::forward_iterator_tag;
 
+    Iterator() = default;
+
+    Iterator(const Iterator& other) = default;
+    Iterator(Iterator&& other) = default;
+    Iterator& operator=(const Iterator& other) = default;
+    Iterator& operator=(Iterator&& other) = default;
+
     //! \brief Create a begin iterator for the B-tree.
     explicit Iterator(const BTreeManager& manager);
 
@@ -125,7 +132,12 @@ public:
     //! \brief Create an end B-Tree iterator
     Iterator(const BTreeManager& manager, [[maybe_unused]] bool);
 
+    //! \brief Pre-incrementation operator.
     Iterator& operator++();
+
+    //! \brief Post-incrementation operator.
+    Iterator operator++(int);
+
     std::unique_ptr<internal::DatabaseEntry> operator*() const;
     bool operator==(const Iterator& other) const;
     bool operator!=(const Iterator& other) const;
@@ -140,7 +152,7 @@ public:
     void descend(const BTreeNodeMap& page, page_size_t index);
 
     //! \brief Reference to the B-tree being traversed.
-    const BTreeManager& manager_;
+    const BTreeManager* manager_{};
 
     //! \brief The current progress at every level of the tree.
     TreePosition progress_;

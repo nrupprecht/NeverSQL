@@ -18,8 +18,8 @@ namespace neversql {
 // ================================================================================================
 
 BTreeManager::Iterator::Iterator(const BTreeManager& manager)
-    : manager_(manager) {
-  auto root = manager_.loadNodePage(manager.GetRootPageNumber());
+    : manager_(&manager) {
+  auto root = manager_->loadNodePage(manager.GetRootPageNumber());
   // If the tree is empty, begin is end.
   if (root->GetNumPointers() != 0) {
     progress_.Push({manager.GetRootPageNumber(), 0});
@@ -29,12 +29,12 @@ BTreeManager::Iterator::Iterator(const BTreeManager& manager)
 
 BTreeManager::Iterator::Iterator(const BTreeManager& manager,
                                  FixedStack<std::pair<page_number_t, page_size_t>> progress)
-    : manager_(manager)
+    : manager_(&manager)
     , progress_(std::move(progress)) {}
 
 //! \brief Create an end B-Tree iterator
 BTreeManager::Iterator::Iterator(const BTreeManager& manager, [[maybe_unused]] bool)
-    : manager_(manager) {}
+    : manager_(&manager) {}
 
 BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
   if (done()) {
@@ -42,7 +42,7 @@ BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
   }
 
   auto& [current_page_number, current_index] = progress_.Top()->get();
-  auto current_page = *manager_.loadNodePage(current_page_number);
+  auto current_page = *manager_->loadNodePage(current_page_number);
   current_index++;
   // There is no more data in the current data page.
   if (current_page.GetNumPointers() <= current_index) {
@@ -50,7 +50,7 @@ BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
 
     while (!done()) {
       auto& [page_number, index] = progress_.Top()->get();
-      auto page = *manager_.loadNodePage(page_number);
+      auto page = *manager_->loadNodePage(page_number);
       ++index;
       // Note: index can be == num pointers, since this means go to the "rightmost page."
       if (index <= page.GetNumPointers()) {
@@ -63,20 +63,26 @@ BTreeManager::Iterator& BTreeManager::Iterator::operator++() {
   return *this;
 }
 
+BTreeManager::Iterator BTreeManager::Iterator::operator++(int) {
+  auto it = *this;
+  ++(*this);
+  return it;
+}
+
 std::unique_ptr<internal::DatabaseEntry> BTreeManager::Iterator::operator*() const {
   if (done()) {
     return {};
   }
 
   auto [page_number, cell_index] = progress_.Top()->get();
-  auto node = *manager_.loadNodePage(page_number);
+  auto node = *manager_->loadNodePage(page_number);
   auto cell = node.getNthCell(cell_index);
   // Should be a data cell.
   NOSQL_ASSERT(std::holds_alternative<DataNodeCell>(cell), "Cell is not a data cell.");
 
   const auto cell_offset = node.getCellOffsetByIndex(cell_index);
 
-  return internal::ReadEntry(cell_offset, std::move(node.GetPage()), &manager_);
+  return internal::ReadEntry(cell_offset, std::move(node.GetPage()), manager_);
 }
 
 bool BTreeManager::Iterator::operator==(const Iterator& other) const {
@@ -88,7 +94,7 @@ bool BTreeManager::Iterator::operator!=(const Iterator& other) const {
 }
 
 bool BTreeManager::Iterator::done() const noexcept {
-  return progress_.Empty();
+  return !manager_ || progress_.Empty();
 }
 
 void BTreeManager::Iterator::descend(const BTreeNodeMap& page, page_size_t index) {
@@ -105,13 +111,13 @@ void BTreeManager::Iterator::descend(const BTreeNodeMap& page, page_size_t index
     next_page_number = std::get<PointersNodeCell>(page.getNthCell(index)).page_number;
   }
 
-  auto descending_page = *manager_.loadNodePage(next_page_number);
+  auto descending_page = *manager_->loadNodePage(next_page_number);
   index = 0;
 
   progress_.Push({next_page_number, index});
   while (descending_page.IsPointersPage()) {
     next_page_number = std::get<PointersNodeCell>(descending_page.getNthCell(index)).page_number;
-    descending_page = *manager_.loadNodePage(next_page_number);
+    descending_page = *manager_->loadNodePage(next_page_number);
     progress_.Push({next_page_number, index});
   }
 }
