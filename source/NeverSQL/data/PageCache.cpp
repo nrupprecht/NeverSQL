@@ -80,6 +80,7 @@ void PageCache::SetDirty(std::size_t slot) {
 
 void PageCache::flushPage(const Page& page) {
   LOG_SEV(Debug) << "Flushing page " << page.GetPageNumber() << ".";
+  // TODO: Write to log?
   data_access_layer_->WriteBackPage(page);
 }
 

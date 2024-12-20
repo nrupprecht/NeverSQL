@@ -13,14 +13,6 @@ namespace neversql {
 //  RCPage.
 // =================================================================================================
 
-RCPage::RCPage(page_number_t page_number,
-               transaction_t transaction_number,
-               page_size_t page_size,
-               uint32_t descriptor_index,
-               PageCache* owning_cache) noexcept
-    : Page(page_number, transaction_number, page_size)
-    , owning_cache_(owning_cache)
-    , descriptor_index_(descriptor_index) {}
 
 RCPage::RCPage(page_size_t page_size, uint32_t descriptor_index, PageCache* owning_cache) noexcept
     : Page(page_size)

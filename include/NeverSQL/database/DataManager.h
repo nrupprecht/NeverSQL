@@ -11,6 +11,11 @@
 
 namespace neversql {
 
+struct CollectionInfo {
+  std::string collection_name;
+  DataTypeEnum key_type;
+};
+
 //! \brief Object that manages the data in the database, e.g. setting up B-trees and indices within the
 //!        database.
 class DataManager {
@@ -19,6 +24,8 @@ public:
 
   //! \brief Add a collection to the database.
   void AddCollection(const std::string& collection_name, DataTypeEnum key_type);
+
+  void AddCollection(const CollectionInfo& info);
 
   // ========================================
   //  General key methods

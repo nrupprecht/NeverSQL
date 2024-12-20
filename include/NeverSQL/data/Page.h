@@ -23,7 +23,7 @@ class Page {
 
 public:
   //! \brief Create a page structure representing a page in the database with a specific number and its size,
-  //! in bytes.
+  //!        in bytes.
   Page(page_number_t page_number, transaction_t transaction_number, page_size_t page_size)
       : page_number_(page_number)
       , transaction_number_(transaction_number)
@@ -157,7 +157,7 @@ class FreestandingPage : public Page {
 public:
   FreestandingPage(page_number_t page_number,
                    transaction_t transaction_number,
-                   page_size_t page_size) noexcept
+                   page_size_t page_size)
       : Page(page_number, transaction_number, page_size) {
     resize(page_size);
   }
@@ -189,11 +189,6 @@ private:
 //! \brief A page that knows how to release its use count from a cache upon destruction.
 class RCPage : public Page {
 public:
-  RCPage(page_number_t page_number,
-         transaction_t transaction_number,
-         page_size_t page_size,
-         uint32_t descriptor_index,
-         class PageCache* owning_cache) noexcept;
 
   //! \brief Create a placeholder page that has not yet been mapped to a page in the database.
   RCPage(page_size_t page_size, uint32_t descriptor_index, class PageCache* owning_cache) noexcept;

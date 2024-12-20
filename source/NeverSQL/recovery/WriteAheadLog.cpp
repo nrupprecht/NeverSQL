@@ -16,6 +16,16 @@ WriteAheadLog::WriteAheadLog(const std::filesystem::path& log_dir_path)
   NOSQL_REQUIRE(log_file_.is_open(), "failed to open WriteAheadLog file");
 }
 
+void WriteAheadLog::BeginTransation(transaction_t transaction_id) {
+  addToBuffer(RecordType::BEGIN);
+  addToBuffer(transaction_id);
+}
+
+void WriteAheadLog::CommitTransation(transaction_t transaction_id) {
+  addToBuffer(RecordType::COMMIT);
+  addToBuffer(transaction_id);
+}
+
 void WriteAheadLog::Update(transaction_t transaction_id,
                            page_number_t page_number,
                            page_size_t offset,
@@ -33,13 +43,14 @@ void WriteAheadLog::Update(transaction_t transaction_id,
   auto sequence_number = next_sequence_number_++;
 
   // Determine if there is enough room in the buffer to write the record.
-  auto size_requirement = sizeof(sequence_number) + sizeof(transaction_id) + sizeof(page_number)
-      + sizeof(offset) + sizeof(data_size) + data_old.size() * 2;
+  auto size_requirement = sizeof(RecordType::COMMIT) + sizeof(sequence_number) + sizeof(transaction_id)
+      + sizeof(page_number) + sizeof(offset) + sizeof(data_size) + data_old.size() * 2;
   if (buffer_.size() - buffer_usage_ < size_requirement) {
     flushBuffer();
   }
 
   // Add all the data to the WAL buffer.
+  addToBuffer(RecordType::COMMIT);
   addToBuffer(sequence_number);
   addToBuffer(transaction_id);
   addToBuffer(page_number);
@@ -51,6 +62,11 @@ void WriteAheadLog::Update(transaction_t transaction_id,
 
 void WriteAheadLog::Flush() {
   flushBuffer();
+  last_flushed_sequence_number_ = next_sequence_number_ - 1;
+}
+
+void WriteAheadLog::addToBuffer(RecordType record_type) {
+  addToBuffer(static_cast<std::uint8_t>(record_type));
 }
 
 void WriteAheadLog::addToBuffer(std::span<const std::byte> data) {

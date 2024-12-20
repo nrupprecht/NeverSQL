@@ -11,17 +11,22 @@
 
 namespace neversql {
 
-enum class RecordType : std::uint8_t {
-  UPDATE,
-  ABORT,
-  COMMIT,
-  CHECKPOINT,
-  CLR,  // Compensation Log Record
+enum class RecordType : char {
+  BEGIN = 'b',
+  UPDATE = 'u',
+  ABORT = 'a',
+  COMMIT = 'c',
+  CHECKPOINT = 'p',
+  CLR = 'l',  // Compensation Log Record
 };
 
 class WriteAheadLog {
 public:
   explicit WriteAheadLog(const std::filesystem::path& log_dir_path);
+
+  void BeginTransation(transaction_t transaction_id);
+
+  void CommitTransation(transaction_t transaction_id);
 
   //! \brief Register an update to a page.
   void Update(transaction_t transaction_id,
@@ -36,6 +41,9 @@ public:
 private:
   //! \brief Flush the internal (in-memory) buffer to the WAL file.
   void flushBuffer();
+
+  //! \brief Write a record type into the internal (in-memory) buffer.
+  void addToBuffer(RecordType record_type);
 
   //! \brief Write a span of data into the internal (in-memory) buffer.
   void addToBuffer(std::span<const std::byte> data);
@@ -56,8 +64,11 @@ private:
   //! \brief Keep track of the next LSN to assign.
   sequence_number_t next_sequence_number_ = 1;
 
+  //! \brief The last sequence number that was flushed to disk.
+  sequence_number_t last_flushed_sequence_number_ = 0;
+
   //! \brief For testing, WAL can be switched off.
-  bool logging_on_ = false;
+  bool logging_on_ = true;
 
   //! \brief A buffer, used to accumulate WAL records before flushing them to persistent storage.
   std::vector<char> buffer_;

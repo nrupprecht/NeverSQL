@@ -63,6 +63,10 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
   collections_.emplace(collection_name, std::move(btree));
 }
 
+void DataManager::AddCollection(const CollectionInfo& info) {
+  AddCollection(std::move(info.collection_name), info.key_type);
+}
+
 void DataManager::AddValue(const std::string& collection_name, GeneralKey key, const Document& document) {
   // Find the collection.
   auto it = collections_.find(collection_name);
