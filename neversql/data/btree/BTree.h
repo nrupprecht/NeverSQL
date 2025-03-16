@@ -55,10 +55,10 @@ struct RetrievalResult {
 //! \brief Convenient structure for packing up data to store in a B-tree.
 struct StoreData {
   //! \brief The key is some collection of bytes. It is context dependent how to compare different keys.
-  GeneralKey key;
+  GeneralKey key {};
 
   //! \brief Entry creator, which knows how to store the data inside the tree.
-  internal::EntryCreator* entry_creator;
+  internal::EntryCreator* entry_creator {};
 
   //! \brief Whether to serialize the size of the key. If false, it is assumed that all keys have a fixed
   //!        sizes that is known by the B-tree manager.

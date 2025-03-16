@@ -58,13 +58,13 @@ struct DataNodeCell {
 
 //! \brief Helper structure that represents a cell in an internal node.
 struct PointersNodeCell {
-  std::byte flags;
+  std::byte flags {};
   const std::span<const std::byte> key;
 
   //! \brief The pointer value.
   //!
   //! \note The data of a pointers node cell (the entry) is just the page number.
-  const page_number_t page_number;
+  const page_number_t page_number {};
 
   //! \brief Get the size of the cell.
   NO_DISCARD page_size_t GetCellSize() const noexcept {
@@ -86,13 +86,13 @@ struct PointersNodeCell {
 //! \brief Structure that represents the space requirements for adding a new entry to a node.
 struct SpaceRequirement {
   //! \brief The amount of space that the pointer needs.
-  page_size_t pointer_space;
+  page_size_t pointer_space {};
 
   //! \brief The amount of space that the cell header needs.
-  page_size_t cell_header_space;
+  page_size_t cell_header_space {};
 
   //! \brief The maximum amount of space that would be available for storing an entry.
-  page_size_t max_entry_space;
+  page_size_t max_entry_space {};
 };
 
 namespace utility {
