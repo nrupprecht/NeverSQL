@@ -3,6 +3,7 @@
 //
 
 #include "neversql/data/Document.h"
+#include <iterator>
 
 using namespace std::string_view_literals;
 
