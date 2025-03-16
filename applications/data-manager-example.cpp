@@ -5,10 +5,10 @@
 #include <iostream>
 #include <string>
 
-#include "NeverSQL/data/btree/BTree.h"
-#include "NeverSQL/database/DataManager.h"
-#include "NeverSQL/utility/HexDump.h"
-#include "NeverSQL/utility/PageDump.h"
+#include "neversql/data/btree/BTree.h"
+#include "neversql/database/DataManager.h"
+#include "neversql/utility/HexDump.h"
+#include "neversql/utility/PageDump.h"
 
 using namespace lightning;
 using namespace neversql;
@@ -21,11 +21,11 @@ int main() {
 
   // ---> Your database path here.
   std::filesystem::path database_path =
-      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-dmgr-test";
+      "/Users/nrupprecht/Library/Mobile Documents/com~apple~CloudDocs/Documents/Nathaniel/Programs/C++/NeverSQL/dbs/database-dmgr-test";
 
   remove_all(database_path);
 
-  primary_key_t num_to_insert = 10'000'000;  // 48
+  primary_key_t num_to_insert = 100'000;  // 48
 
   DataManager manager(database_path);
 
@@ -84,7 +84,8 @@ int main() {
   try {
     manager.NodeDumpPage(4, std::cout);
     std::cout << std::endl;
-  } catch (...) {
+  } catch ([[maybe_unused]] const std::exception& ex) {
+    // Ok if this fails, since there may be no page 4.
   }
 
   // Search for some elements.

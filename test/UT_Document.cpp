@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#include "NeverSQL/data/Document.h"
+#include "neversql/data/Document.h"
 
 using namespace std::string_literals;
 using namespace std::string_view_literals;

@@ -5,13 +5,13 @@
 #include <filesystem>
 #include <fstream>
 
-#include "NeverSQL/recovery/WriteAheadLog.h"
+#include "neversql/recovery/WriteAheadLog.h"
 
 using namespace neversql;
 
 int main() {
   std::filesystem::path database_path =
-      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/shakespeare-database";
+      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/neversql/shakespeare-database";
   std::ifstream walfile;
   walfile.open(database_path / "walfiles/wal.log", std::ios::binary | std::ios::in);
 

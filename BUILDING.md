@@ -71,7 +71,7 @@ command of CMake:
 Example usage:
 
 ```cmake
-find_package(NeverSQL REQUIRED)
+find_package(neversql REQUIRED)
 # Declare the imported target as a build requirement using PRIVATE, where
 # project_target is a target created in the consuming project
 target_link_libraries(

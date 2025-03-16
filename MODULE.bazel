@@ -1,0 +1,10 @@
+module(name = "never_sql", version = "0.1.0")
+
+bazel_dep(name = "googletest", version = "1.15.2")
+
+bazel_dep(name = "lightning", version="0.1.0")
+git_override(
+    module_name = "lightning",
+    remote = "https://github.com/nrupprecht/Lightning.git",
+    commit = "2fce774813b42dfcc9f80981830612381031c1d3"
+)

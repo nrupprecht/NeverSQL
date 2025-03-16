@@ -5,12 +5,12 @@
 #include <iostream>
 #include <string>
 
-#include "NeverSQL/data/btree/BTree.h"
-#include "NeverSQL/data/internals/Utility.h"
-#include "NeverSQL/database/DataManager.h"
-#include "NeverSQL/database/Query.h"
-#include "NeverSQL/utility/HexDump.h"
-#include "NeverSQL/utility/PageDump.h"
+#include "neversql/data/btree/BTree.h"
+#include "neversql/data/internals/Utility.h"
+#include "neversql/database/DataManager.h"
+#include "neversql/database/Query.h"
+#include "neversql/utility/HexDump.h"
+#include "neversql/utility/PageDump.h"
 
 using neversql::primary_key_t;
 using namespace lightning;
@@ -22,7 +22,7 @@ int main() {
 
   // ---> Your database path here.
   std::filesystem::path database_path =
-      "/Users/nathaniel/Documents/Nathaniel/Programs/C++/NeverSQL/database-string";
+      "/Users/nrupprecht/Library/Mobile Documents/com~apple~CloudDocs/Documents/Nathaniel/Programs/C++/NeverSQL/dbs/database-string";
 
   std::filesystem::remove_all(database_path);
 

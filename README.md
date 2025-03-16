@@ -1,6 +1,6 @@
 # NeverSQL
 
-[![CMake on multiple platforms](https://github.com/nrupprecht/NeverSQL/actions/workflows/cmake-build-and-test-platform.yml/badge.svg)](https://github.com/nrupprecht/NeverSQL/actions/workflows/cmake-build-and-test-platform.yml)
+[![CMake on multiple platforms](https://github.com/nrupprecht/neversql/actions/workflows/cmake-build-and-test-platform.yml/badge.svg)](https://github.com/nrupprecht/neversql/actions/workflows/cmake-build-and-test-platform.yml)
 
 A small, simple no-SQL database implemented in C++. 
 
@@ -10,7 +10,7 @@ intended for production use.
 ## Basic useage
 
 NeverSQL is a document based database, where each document is a JSON, or JSON-like object. NeverSQL has
-a [Document](include/NeverSQL/data/Document.h) class
+a [Document](neversql/data/Document.h) class
 that can be use to construct documents, one field at a time. This class is also used to add documents to the Database.
 
 ```c++
@@ -34,7 +34,7 @@ helen_document.AddElement("age", neversql::IntegralValue{25});
 
 ### DataManager
 
-Currently, the "highest level" interface to the database is the [DataManager](include/NeverSQL/DataManager.h) class.
+Currently, the "highest level" interface to the database is the [DataManager](neversql/DataManager.h) class.
 This is fairly low level in that it does not do things like parse queries, it manages the storage and retrieval of 
 documents. It can also create new "collections" of documents, analogous to tables in a relational database.
 ```c++
@@ -98,8 +98,8 @@ See [Architecture.md](Architecture.md) for a high-level overview of the architec
 ## Other tools
 
 The project includes some basic functionality to do a hex dump of a file or stream. This can be useful for debugging
-purposes. This is implemented in [NeverSQL/utility/HexDump.h](include/NeverSQL/utility/hexdump.h)
-and [NeverSQL/utility/HexDump.cpp](source/NeverSQL/utility/HexDump.cpp).
+purposes. This is implemented in [neversql/utility/HexDump.h](neversql/utility/hexdump.h)
+and [neversql/utility/HexDump.cpp](neversql/utility/HexDump.cpp).
 
 ![Alt text](./images/hexdump-example-1.png)
 The DataManager has a method to do a hex dump of a page, which can be used like
@@ -117,8 +117,8 @@ manager.NodeDumpPage(2, std::cout);
 ```
 
 There is also a tool to do an analysis of a BTree page node. This is implemented
-in [NeverSQL/utility/PageDump.h](include/NeverSQL/utility/PageDump.h)
-and [NeverSQL/utility/PageDump.cpp](source/NeverSQL/utility/PageDump.cpp).
+in [neversql/utility/PageDump.h](neversql/utility/PageDump.h)
+and [neversql/utility/PageDump.cpp](neversql/utility/PageDump.cpp).
 
 For example, a data page (leaf, or the root when it has no children) will look like this:
 ![Alt text](./images/pagedump-example-1.png)

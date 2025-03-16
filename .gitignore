@@ -13,3 +13,6 @@ compile_commands.json
 .conan*
 .conan.lock
 CMakeUserPresets.txt
+dbs/*
+MODULE.bazel.lock
+bazel-*
