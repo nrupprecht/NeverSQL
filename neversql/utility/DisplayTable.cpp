@@ -6,6 +6,7 @@
 // Other files.
 #include <numeric>
 #include <ranges>
+#include <iterator>
 
 #include <Lightning/Lightning.h>
 

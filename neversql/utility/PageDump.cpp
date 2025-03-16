@@ -5,6 +5,7 @@
 #include "neversql/utility/PageDump.h"
 // Other files.
 #include <numeric>
+#include <iterator>
 
 #include "neversql/data/internals/KeyPrinting.h"
 #include "neversql/utility/DisplayTable.h"

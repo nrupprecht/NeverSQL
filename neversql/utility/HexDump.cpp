@@ -5,6 +5,7 @@
 #include "neversql/utility/HexDump.h"
 // Other files.
 #include <iomanip>
+#include <iterator>
 
 #include "neversql/utility/Defines.h"
 
