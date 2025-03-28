@@ -572,7 +572,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
     // the split value in the parent.
     auto pointers_cell =
         std::get<PointersNodeCell>(node.getCell(pointers[static_cast<uint64_t>(num_elements_to_move - 1)]));
-    new_node.GetHeader().SetAdditionalData(pointers_cell.page_number);  // TODO: WriteToPage.
+    new_node.GetHeader().SetAdditionalData(pointers_cell.page_number);
 
     return_data.SetKey(pointers_cell.key);
   }
@@ -919,7 +919,7 @@ page_size_t BTreeManager::writeFlags(Page& page,
                                      internal::EntryCreator& entry_creator,
                                      page_size_t offset) noexcept {
   auto flags = entry_creator.GenerateFlags();
-  // Flags the the B-tree is responsible for.
+  // Set flags the the B-tree is responsible for.
   flags |= static_cast<std::byte>(internal::EntryFlags::IsActive);
   if (header.AreKeySizesSpecified()) {
     flags |= static_cast<std::byte>(internal::EntryFlags::KeySizeIsSerialized);

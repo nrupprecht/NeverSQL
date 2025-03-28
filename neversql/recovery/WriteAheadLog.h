@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <span>
 #include <filesystem>
+#include <span>
 
 #include "neversql/utility/Defines.h"
 
@@ -24,16 +24,18 @@ class WriteAheadLog {
 public:
   explicit WriteAheadLog(const std::filesystem::path& log_dir_path);
 
+  ~WriteAheadLog();
+
   void BeginTransation(transaction_t transaction_id);
 
   void CommitTransation(transaction_t transaction_id);
 
   //! \brief Register an update to a page.
-  void Update(transaction_t transaction_id,
-              page_number_t page_number,
-              page_size_t offset,
-              std::span<const std::byte> data_old,
-              std::span<const std::byte> data_new);
+  sequence_number_t Update(transaction_t transaction_id,
+                           page_number_t page_number,
+                           page_size_t offset,
+                           std::span<const std::byte> data_old,
+                           std::span<const std::byte> data_new);
 
   //! \brief Force a flush of the WAL.
   void Flush();
@@ -72,6 +74,7 @@ private:
 
   //! \brief A buffer, used to accumulate WAL records before flushing them to persistent storage.
   std::vector<char> buffer_;
+
   //! \brief The amount of space the buffer is currently using. To reset the bufer, we simply set this to 0.
   std::size_t buffer_usage_ = 0;
 };

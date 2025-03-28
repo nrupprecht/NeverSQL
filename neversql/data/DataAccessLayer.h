@@ -50,7 +50,7 @@ public:
   NO_DISCARD page_size_t GetPageSize() const;
 
   //! \brief Get a page from the DAL, if the page exists and is valid (not freed). Writes the page's
-  //! information into the provided Page object.
+  //!        information into the provided Page object.
   void GetPage(page_number_t page_number, Page& page) const;
 
   //! \brief Get the meta data.
@@ -61,7 +61,7 @@ private:
   NO_DISCARD uint64_t getNumAllocatedPages() const;
 
   //! \brief Get a page from the DAL. If safe_mode is true, we will check if the page is valid (not freed).
-  //! Otherwise, we will return the page regardless of its status.
+  //!        Otherwise, we will return the page regardless of its status.
   //!
   //! Unsafe mode is useful when loading the meta page, since the free list is not yet initialized.
   //!
