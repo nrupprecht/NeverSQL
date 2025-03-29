@@ -13,6 +13,8 @@
 
 namespace neversql {
 
+constexpr long MAGIC_PAGE_NUMBER = 5675675675675675675;
+
 //! \brief Class that keeps a cache of pages in memory. This is useful for reducing the number of reads and
 //!        writes to the disk, pages that are frequently used can be kept in memory.
 class PageCache {
@@ -45,16 +47,18 @@ private:
   //! \brief A description of the page that is in a particular slot in the cache.
   struct PageDescriptor {
     // TODO: Generally, the flags in a page cache are much more complex and keep track of more. Start simple,
-    //  improve as necessary.
+    //       improve as necessary.
 
-    page_number_t page_number = 5675675675675675675;
+    page_number_t page_number = MAGIC_PAGE_NUMBER;
+    
     uint8_t usage_count {};
+
     //! \brief Descriptor flags.
     //! 0b 0000 0CDU
     //! D: Dirty bit, 1 if the page has been modified.
     //! V: Valid bit, 1 if an actual page is stored here.
     //! C: Second chance bit, set to 1 whenever the page is referenced, set to 0 whenever the clock hand
-    //! passes by it.
+    //!    passes by it.
     uint8_t flags {};
 
     NO_DISCARD bool IsValid() const noexcept { return (flags & 0x1) != 0; }
@@ -90,8 +94,7 @@ private:
 
     //! \brief Release the descriptor so it can be used again.
     void ReleaseDescriptor() noexcept {
-      // "Magic number" to indicate that the slot is empty.
-      page_number = 5675675675675675675;
+      page_number = MAGIC_PAGE_NUMBER;
       usage_count = 0;
       flags = 0;
     }
@@ -141,9 +144,8 @@ private:
   std::unique_ptr<std::byte[]> page_cache_;
 
   //! \brief The data access layer, which is used to read and write pages to the disk.
-  //! NOTE(Nate): Probably, the PageCache should just own the DAL, if you want to get the data you *have* to
-  //! go through
-  //!     the page cache.
+  //!        NOTE(Nate): Probably, the PageCache should just own the DAL, if you want to get the data you
+  //!        *have* to go through the page cache.
   DataAccessLayer* data_access_layer_;
 
   //! \brief The number of pages that can fit in the cache.

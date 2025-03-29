@@ -44,22 +44,26 @@ public:
   // =================================================================================================
 
   //! \brief Write to a page, potentially causing a WAL to be written. Returns the offset after the write.
-  virtual page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data) = 0;
+  //!        If omit_log is true, the write is should not be logged.
+  virtual page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data, bool omit_log = false) {
+    return writeToPage(offset, data, omit_log);
+  }
 
   //! \brief Write a value of a particular type.
   template<typename T>
     requires std::is_trivially_copyable_v<T>
-  page_size_t WriteToPage(page_size_t offset, const T& data) {
+  page_size_t WriteToPage(page_size_t offset, const T& data, bool omit_log = false) {
     std::span view(reinterpret_cast<const std::byte*>(&data), sizeof(T));
-    return WriteToPage(offset, view);
+    return WriteToPage(offset, view, omit_log);
   }
 
   //! \brief Write a span of data to a page.
   template<typename T>
-  page_size_t WriteToPage(page_size_t offset, std::span<T> data_range) {
+  page_size_t WriteToPage(page_size_t offset, std::span<T> data_range, bool omit_log = false) {
     return WriteToPage(
         offset,
-        std::span(reinterpret_cast<const std::byte*>(data_range.data()), data_range.size() * sizeof(T)));
+        std::span(reinterpret_cast<const std::byte*>(data_range.data()), data_range.size() * sizeof(T)),
+      omit_log);
   }
 
   void MoveInPage(page_size_t src_offset, page_size_t dest_offset, page_size_t size) {
@@ -132,6 +136,8 @@ public:
   void SetTransactionNumber(transaction_t transaction) { transaction_number_ = transaction; }
 
 protected:
+  virtual page_size_t writeToPage(page_size_t offset, std::span<const std::byte> data, bool omit_log = false) = 0;
+
   NO_DISCARD const std::byte* getPtr(page_size_t offset) const {
     NOSQL_REQUIRE(offset < GetPageSize(),
                   "getPtr: offset " << offset << " is greater than page size (" << GetPageSize() << ")");
@@ -162,13 +168,6 @@ public:
     resize(page_size);
   }
 
-  page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data) override {
-    NOSQL_REQUIRE(offset + data.size() <= page_size_,
-                  "WriteToPage: offset + data.size() is greater than page size");
-    std::memcpy(data_ + offset, data.data(), data.size());
-    return static_cast<page_size_t>(offset + data.size());
-  }
-
   NO_DISCARD std::unique_ptr<Page> NewHandle() const override {
     auto page = std::make_unique<FreestandingPage>(page_number_, transaction_number_, page_size_);
     page->data_buffer_ = data_buffer_;
@@ -176,6 +175,13 @@ public:
   }
 
 private:
+  page_size_t writeToPage(page_size_t offset, std::span<const std::byte> data, bool) override {
+    NOSQL_REQUIRE(offset + data.size() <= page_size_,
+                  "WriteToPage: offset + data.size() is greater than page size");
+    std::memcpy(data_ + offset, data.data(), data.size());
+    return static_cast<page_size_t>(offset + data.size());
+  }
+
   //! \brief The data is stored in the page structure itself, not in some other place referenced by the page.
   std::shared_ptr<std::vector<std::byte>> data_buffer_;
 
@@ -196,9 +202,6 @@ public:
   //! \brief Release the page.
   ~RCPage() override;
 
-  //! \brief Write to a page. This registers the write with the page cache and WAL.
-  page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data) override;
-
   //! \brief Set the data that the page references.
   void SetData(std::byte* data) { data_ = data; }
 
@@ -206,6 +209,9 @@ public:
   NO_DISCARD std::unique_ptr<Page> NewHandle() const override;
 
 private:
+  //! \brief Write to a page. This registers the write with the page cache and WAL.
+  page_size_t writeToPage(page_size_t offset, std::span<const std::byte> data, bool omit_log) override;
+
   //! \brief The page cache that owns this page.
   PageCache* owning_cache_;
 

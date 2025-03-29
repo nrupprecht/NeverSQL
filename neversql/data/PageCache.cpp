@@ -109,8 +109,9 @@ std::unique_ptr<Page> PageCache::mapPageFromSlot(std::size_t slot) {
   NOSQL_REQUIRE(slot < cache_size_,
                 "slot is out of range, tried to map slot " << slot << " from cache of size " << cache_size_);
 
-  auto* page_start_ptr = page_cache_.get() + slot * data_access_layer_->GetPageSize();
-  auto page = std::make_unique<RCPage>(data_access_layer_->GetPageSize(), slot, this);
+  auto page_size = data_access_layer_->GetPageSize();
+  auto* page_start_ptr = page_cache_.get() + slot * page_size;
+  auto page = std::make_unique<RCPage>(page_size, slot, this);
   page->SetData(page_start_ptr);
 
   return page;
