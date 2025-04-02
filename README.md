@@ -1,6 +1,6 @@
 # NeverSQL
 
-[![Bazel build and test](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml/badge.svg)](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml.yml)
+[![Bazel build and test](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml/badge.svg)](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml)
 
 A small, simple no-SQL database implemented in C++. 
 
