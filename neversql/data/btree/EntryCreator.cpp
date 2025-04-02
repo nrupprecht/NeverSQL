@@ -11,8 +11,9 @@
 
 namespace neversql::internal {
 
-EntryCreator::EntryCreator(std::unique_ptr<EntryPayloadSerializer>&& payload, bool serialize_size)
+EntryCreator::EntryCreator(uint64_t transaction_id, std::unique_ptr<EntryPayloadSerializer>&& payload, bool serialize_size)
     : serialize_size_(serialize_size)
+    , transaction_id_(transaction_id)
     , payload_(std::move(payload)) {}
 
 page_size_t EntryCreator::GetMinimumEntrySize() const {
@@ -79,11 +80,13 @@ page_size_t EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t start
   // Header:
   // [overflow_key: 8 bytes] [overflow page number: 8 bytes]
 
+  Transaction transaction {0};  // TODO
+
   auto offset = starting_offset;
 
   // Get an overflow entry number.
   auto overflow_key = btree_manager->getNextOverflowEntryNumber();
-  offset = page->WriteToPage(offset, overflow_key);
+  offset = transaction.WriteToPage(*page, offset, overflow_key);
   LOG_SEV(Trace) << "Creating overflow entry with overflow key " << overflow_key << ".";
 
   // For each subsequent overflow page:
@@ -95,7 +98,7 @@ page_size_t EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t start
   auto overflow_page_number = loadOverflowPage(overflow_key, btree_manager);
 
   // Write the overflow page number.
-  offset = page->WriteToPage(offset, overflow_page_number);
+  offset = transaction.WriteToPage(*page, offset, overflow_page_number);
   writeOverflowData(overflow_key, overflow_page_number, btree_manager);
 
   // Return the offset after the entry on the *primary* page (not any of the overflow pages).
@@ -103,20 +106,22 @@ page_size_t EntryCreator::createOverflowEntry([[maybe_unused]] page_size_t start
 }
 
 page_size_t EntryCreator::createSinglePageEntry(page_size_t starting_offset, Page* page) {
+  Transaction transaction {0};  // TODO
+
   // Write the entry size to the page. If the entry size needs to be serialized, it is written first.
   // Note that the entry flags indicate whether the entry size is serialized.
   auto offset = starting_offset;
   if (serialize_size_) {
     const auto entry_size = static_cast<page_size_t>(payload_->GetRequiredSize());
     LOG_SEV(Trace) << "Writing entry size " << entry_size << " for single page entry at " << offset << ".";
-    offset = page->WriteToPage(offset, entry_size);
+    offset = transaction.WriteToPage(*page, offset, entry_size);
   }
 
   // Write the entry payload to the page.
   LOG_SEV(Trace) << "Starting writing data for single page entry at " << offset << ".";
   while (payload_->HasData()) {
     // Note that the payload acts like a generator, you keep asking for the next byte until it is empty.
-    offset = page->WriteToPage(offset, payload_->GetNextByte());
+    offset = transaction.WriteToPage(*page, offset, payload_->GetNextByte());
   }
 
   LOG_SEV(Trace) << "Done writing data for single page entry, offset is " << offset << ".";
@@ -124,6 +129,8 @@ page_size_t EntryCreator::createSinglePageEntry(page_size_t starting_offset, Pag
 }
 
 page_size_t EntryCreator::createOverflowDataEntry(page_size_t starting_offset, Page* page) {
+  Transaction transaction {0};  // TODO
+
   LOG_SEV(Trace) << "Writing data to overflow page (page " << page->GetPageNumber() << ") at "
                  << starting_offset << ", will write " << next_overflow_entry_size_ << " bytes.";
   auto offset = starting_offset;
@@ -132,16 +139,16 @@ page_size_t EntryCreator::createOverflowDataEntry(page_size_t starting_offset, P
   // serialize the entry size, so the Entry reader will work properly.
   const auto entry_size = static_cast<page_size_t>(sizeof(primary_key_t) + next_overflow_entry_size_);
   LOG_SEV(Trace) << "Writing entry size " << entry_size << " for single page entry at " << offset << ".";
-  offset = page->WriteToPage(offset, entry_size);
+  offset = transaction.WriteToPage(*page, offset, entry_size);
 
   // First part of the overflow entry is the next page number, which is 0 if there is no next page.
-  offset = page->WriteToPage(offset, next_overflow_page_);  // 8 bytes
+  offset = transaction.WriteToPage(*page, offset, next_overflow_page_);  // 8 bytes
 
   // Then, all the data is written.
   LOG_SEV(Trace) << "Writing overflow data to offset " << offset << " on page " << page->GetPageNumber()
                  << ".";
   for (std::size_t i = 0; i < next_overflow_entry_size_; ++i) {
-    offset = page->WriteToPage(offset, payload_->GetNextByte());
+    offset = transaction.WriteToPage(*page, offset, payload_->GetNextByte());
   }
   LOG_SEV(Trace) << "Done writing data to overflow page (page " << page->GetPageNumber() << "), offset is "
                  << offset << ".";

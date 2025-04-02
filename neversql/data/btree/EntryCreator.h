@@ -48,7 +48,7 @@ inline bool GetIsEntrySizeSerialized(std::byte flags) {
 }
 
 //! \brief Object that knows how to create entries inside a B-tree, or read B-tree entries to create a
-//! DatabaseEntry.
+//!        DatabaseEntry.
 //!
 //! An EntryCreator will be created to create a data payload in a B-tree for some object, like a document,
 //! that needs to be stored in the database. The EntryCreator may need to request that the B-tree create
@@ -101,7 +101,9 @@ class EntryCreator {
 public:
   virtual ~EntryCreator() = default;
 
-  explicit EntryCreator(std::unique_ptr<EntryPayloadSerializer>&& payload, bool serialize_size = true);
+  explicit EntryCreator(uint64_t transaction_id,
+                        std::unique_ptr<EntryPayloadSerializer>&& payload,
+                        bool serialize_size = true);
 
   //! \brief The minimum amount of space that the part of an entry that the EntryCreator creates can take up
   //! in a page.
@@ -151,19 +153,22 @@ protected:
   primary_key_t next_overflow_page_ {};
   entry_size_t next_overflow_entry_size_ {};
 
+  //! \brief The transaction that produced this EntryCreator.
+  uint64_t transaction_id_ {};
+
   std::unique_ptr<EntryPayloadSerializer> payload_;
 };
 
 //! \brief Create an entry creator with a payload of type Payload_t.
 template<typename Payload_t, typename... Args_t>
-auto MakeCreator(Args_t&&... args) {
-  return EntryCreator(std::make_unique<Payload_t>(std::forward<Args_t>(args)...));
+auto MakeCreator(uint64_t transaction_id, Args_t&&... args) {
+  return EntryCreator(transaction_id, std::make_unique<Payload_t>(std::forward<Args_t>(args)...));
 }
 
 //! \brief Create an entry creator with a payload of type Payload_t that does not serialize the entry size.
 template<typename Payload_t, typename... Args_t>
-auto MakeSizelessCreator(Args_t&&... args) {
-  return EntryCreator(std::make_unique<Payload_t>(std::forward<Args_t>(args)...), false);
+auto MakeSizelessCreator(uint64_t transaction_id, Args_t&&... args) {
+  return EntryCreator(transaction_id, std::make_unique<Payload_t>(std::forward<Args_t>(args)...), false);
 }
 
 }  // namespace neversql::internal

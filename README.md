@@ -1,6 +1,6 @@
 # NeverSQL
 
-[![CMake on multiple platforms](https://github.com/nrupprecht/neversql/actions/workflows/cmake-build-and-test-platform.yml/badge.svg)](https://github.com/nrupprecht/neversql/actions/workflows/cmake-build-and-test-platform.yml)
+[![Bazel build and test](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml/badge.svg)](https://github.com/nrupprecht/NeverSQL/actions/workflows/bazel-multi-platform.yml.yml)
 
 A small, simple no-SQL database implemented in C++. 
 

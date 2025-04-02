@@ -18,14 +18,14 @@ public:
 
   //! \brief Get the data. All the data is on the same page.
   std::span<const std::byte> GetData() const noexcept override {
-    return page_->ReadFromPage(starting_offset_, entry_size_);
+    return page_->GetSpan(starting_offset_, entry_size_);
   }
 
   //! \brief There is no further page to advance to.
   bool Advance() override { return false; }
 
   //! \brief The page must be valid.
-  bool IsValid() const override { return page_ != nullptr && page_->GetData() != nullptr; }
+  bool IsValid() const override { return page_ != nullptr && page_->GetChars() != nullptr; }
 
 private:
   page_size_t starting_offset_;

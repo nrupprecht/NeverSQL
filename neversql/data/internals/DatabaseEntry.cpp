@@ -61,7 +61,7 @@ std::unique_ptr<DatabaseEntry> ReadEntry(page_size_t starting_offset,
     return std::make_unique<SinglePageEntry>(entry_offset, std::move(page));
   }
 
-  auto header = page->ReadFromPage(entry_offset, 16);
+  auto header = page->GetSpan(entry_offset, 16);
   return std::make_unique<OverflowEntry>(header, btree_manager);
 }
 

@@ -125,7 +125,7 @@ void PageInspector::NodePageDump(const BTreeNodeMap& node, std::ostream& out) {
   buffer.Clear();
 
   out << lightning::formatting::Format(
-      "|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.GetFreeStart());
+      "|  {:<20}{@BWHITE}{}{@RESET}\n", "Free start:", header.GetFreeBegin());
   out << lightning::formatting::Format("|  {:<20}{@BWHITE}{}{@RESET}\n", "Free end:", header.GetFreeEnd());
   out << lightning::formatting::Format(
       "|  {:<20}{@BWHITE}{}{@RESET}\n", "Reserved start:", header.GetReservedStart());

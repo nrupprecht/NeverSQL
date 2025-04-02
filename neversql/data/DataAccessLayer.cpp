@@ -236,10 +236,12 @@ void DataAccessLayer::serialize(Page& page, const FreeList& free_list) {
   // TODO: Check that there is enough space left in the meta page.
   // TODO: Allow the free list to be written to multiple pages?
 
-  auto offset = page.WriteToPage(0, free_list.next_page_number_);
-  offset = page.WriteToPage(offset, free_list.freed_pages_.size());
+  Transaction transaction{0}; // TODO.
+
+  auto offset = transaction.WriteToPage(page, 0, free_list.next_page_number_);
+  offset = transaction.WriteToPage(page, offset, free_list.freed_pages_.size());
   for (auto page_number : free_list.freed_pages_) {
-    offset = page.WriteToPage(offset, page_number);
+    offset = transaction.WriteToPage(page, offset, page_number);
   }
 }
 
@@ -257,10 +259,11 @@ void DataAccessLayer::deserialize(const Page& page, FreeList& free_list) {
 }
 
 void DataAccessLayer::serialize(Page& page, const Meta& meta) {
-  auto offset = page.WriteToPage(0, Meta::meta_magic_number_);
-  offset = page.WriteToPage(offset, meta.page_size_power_);
-  offset = page.WriteToPage(offset, meta.free_list_page_);
-  page.WriteToPage(offset, meta.index_page_);
+  Transaction transaction{0}; // TODO.
+  auto offset = transaction.WriteToPage(page, 0, Meta::meta_magic_number_);
+  offset = transaction.WriteToPage(page, offset, meta.page_size_power_);
+  offset = transaction.WriteToPage(page, offset, meta.free_list_page_);
+  transaction.WriteToPage(page, offset, meta.index_page_);
 }
 
 void DataAccessLayer::deserialize(const Page& page, Meta& meta) {

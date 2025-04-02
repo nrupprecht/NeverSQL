@@ -18,8 +18,9 @@ enum class DataTypeEnum : int8_t {
   Boolean = 6,
   DateTime = 7,
   Int32 = 8,
-  Int64 = 9,
-  UInt64 = 10
+  UInt32 = 9,
+  Int64 = 10,
+  UInt64 = 11
 };
 
 inline std::string to_string(DataTypeEnum value) {
@@ -35,6 +36,7 @@ inline std::string to_string(DataTypeEnum value) {
     case Boolean: return "Boolean";
     case DateTime: return "DateTime";
     case Int32: return "Int32";
+    case UInt32: return "UInt32";
     case Int64: return "Int64";
     case UInt64: return "UInt64";
     default: return lightning::formatting::Format("<unknown, value = {}>", static_cast<int>(value));
@@ -81,12 +83,22 @@ inline DataTypeEnum GetDataTypeEnum<int32_t>() {
 }
 
 template<>
+inline DataTypeEnum GetDataTypeEnum<uint32_t>() {
+  return DataTypeEnum::UInt32;
+}
+
+template<>
 inline DataTypeEnum GetDataTypeEnum<int64_t>() {
   return DataTypeEnum::Int64;
 }
 
 template<>
 inline DataTypeEnum GetDataTypeEnum<uint64_t>() {
+  return DataTypeEnum::UInt64;
+}
+
+template<>
+inline DataTypeEnum GetDataTypeEnum<unsigned long>() {
   return DataTypeEnum::UInt64;
 }
 

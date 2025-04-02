@@ -56,7 +56,10 @@ void DataManager::AddCollection(const std::string& collection_name, DataTypeEnum
   document->AddElement("collection_name", StringValue {collection_name});
   document->AddElement("index_page_number", IntegralValue {page_number});
 
-  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(std::move(document));
+  uint64_t transaction_id = 0;  // TODO
+
+  auto creator =
+      internal::MakeCreator<internal::DocumentPayloadSerializer>(transaction_id, std::move(document));
   collection_index_->AddValue(internal::SpanValue(collection_name), creator);
 
   // Cache the collection in the data manager.
@@ -73,7 +76,9 @@ void DataManager::AddValue(const std::string& collection_name, GeneralKey key, c
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
-  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(document);
+  uint64_t transaction_id = 0;  // TODO
+
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(transaction_id, document);
   it->second->AddValue(key, creator);
 }
 
@@ -99,7 +104,9 @@ void DataManager::AddValue(const std::string& collection_name, const Document& d
   // TODO: Error handling without throwing.
   NOSQL_ASSERT(it != collections_.end(), "Collection '" << collection_name << "' does not exist.");
 
-  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(document);
+  uint64_t transaction_id = 0;
+
+  auto creator = internal::MakeCreator<internal::DocumentPayloadSerializer>(transaction_id, document);
   it->second->AddValue(creator);
 }
 

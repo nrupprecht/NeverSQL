@@ -21,6 +21,8 @@ namespace neversql {
 class Page {
   friend class DataAccessLayer;
 
+  friend class Transaction;
+
 public:
   //! \brief Create a page structure representing a page in the database with a specific number and its size,
   //!        in bytes.
@@ -43,47 +45,6 @@ public:
   //  Reading and writing from pages.
   // =================================================================================================
 
-  //! \brief Write to a page, potentially causing a WAL to be written. Returns the offset after the write.
-  //!        If omit_log is true, the write is should not be logged.
-  virtual page_size_t WriteToPage(page_size_t offset, std::span<const std::byte> data, bool omit_log = false) {
-    return writeToPage(offset, data, omit_log);
-  }
-
-  //! \brief Write a value of a particular type.
-  template<typename T>
-    requires std::is_trivially_copyable_v<T>
-  page_size_t WriteToPage(page_size_t offset, const T& data, bool omit_log = false) {
-    std::span view(reinterpret_cast<const std::byte*>(&data), sizeof(T));
-    return WriteToPage(offset, view, omit_log);
-  }
-
-  //! \brief Write a span of data to a page.
-  template<typename T>
-  page_size_t WriteToPage(page_size_t offset, std::span<T> data_range, bool omit_log = false) {
-    return WriteToPage(
-        offset,
-        std::span(reinterpret_cast<const std::byte*>(data_range.data()), data_range.size() * sizeof(T)),
-      omit_log);
-  }
-
-  void MoveInPage(page_size_t src_offset, page_size_t dest_offset, page_size_t size) {
-    NOSQL_REQUIRE(src_offset + size <= page_size_,
-                  "MoveInPage: src_offset + size = " << src_offset + size << " is greater than page size "
-                                                     << page_size_);
-    NOSQL_REQUIRE(dest_offset + size <= page_size_,
-                  "MoveInPage: dest_offset + size = " << dest_offset + size << " is greater than page size "
-                                                      << page_size_);
-    WriteToPage(dest_offset, GetSpan(src_offset, size));
-  }
-
-  //! \brief Read data from a page, as a span.
-  std::span<const std::byte> ReadFromPage(page_size_t offset, page_size_t size) const {
-    NOSQL_REQUIRE(offset + size <= page_size_,
-                  "ReadFromPage: offset + size = " << offset + size << " is greater than page size "
-                                                   << page_size_ << " on page " << page_number_);
-    return {getPtr(offset), size};
-  }
-
   template<typename T>
     requires std::is_trivially_copyable_v<T>
   NO_DISCARD T Read(page_size_t offset) const {
@@ -93,25 +54,19 @@ public:
     return value;
   }
 
-  NO_DISCARD const char* GetChars() const { return reinterpret_cast<const char*>(data_); }
-
-  NO_DISCARD const std::byte* GetData() const { return data_; }
-
-  //! \brief Get a span of the page's data.
-  NO_DISCARD std::span<const std::byte> GetSpan(page_size_t offset, page_size_t span_size) const {
-    return ReadFromPage(offset, span_size);
+  template<typename T, typename Struct_t, typename Member_t>
+    requires std::is_trivially_copyable_v<T>
+  NO_DISCARD T Read(Member_t Struct_t::* member) const {
+    return Read<T>(offset(member));
   }
 
-  template<typename T>
+  NO_DISCARD const char* GetChars() const { return reinterpret_cast<const char*>(data_); }
+
+  //! \brief Get a span of the page's data, as a specified data type..
+  template<typename T = std::byte>
     requires std::is_trivially_copyable_v<T>
   NO_DISCARD std::span<const T> GetSpan(page_size_t offset, page_size_t num_elements) const {
     return std::span(reinterpret_cast<const T*>(getPtr(offset)), num_elements);
-  }
-
-  template<typename T>
-    requires std::is_trivially_copyable_v<T>
-  NO_DISCARD std::span<T> GetMutableSpan(page_size_t offset, page_size_t num_elements) {
-    return std::span<T>(reinterpret_cast<T*>(getMutablePtr(offset)), num_elements);
   }
 
   // =================================================================================================
@@ -136,20 +91,46 @@ public:
   void SetTransactionNumber(transaction_t transaction) { transaction_number_ = transaction; }
 
 protected:
-  virtual page_size_t writeToPage(page_size_t offset, std::span<const std::byte> data, bool omit_log = false) = 0;
+  //! \brief Write a value of a particular type.
+  template<typename T>
+    requires std::is_trivially_copyable_v<T>
+  page_size_t writeToPage(page_size_t offset, const T& data, bool omit_log = false) {
+    std::span view(reinterpret_cast<const std::byte*>(&data), sizeof(T));
+    return writeToPage(offset, view, omit_log);
+  }
+
+  //! \brief Write to a page, potentially causing a WAL to be written. Returns the offset after the write.
+  //!        If omit_log is true, the write is should not be logged.
+  template<typename T>
+  page_size_t writeToPage(page_size_t offset, std::span<const T> data_range, bool omit_log = false) {
+    return writeToPage(
+        offset,
+        std::span(reinterpret_cast<const std::byte*>(data_range.data()), data_range.size() * sizeof(T)),
+        omit_log);
+  }
+
+  void moveInPage(page_size_t src_offset, page_size_t dest_offset, page_size_t size) {
+    NOSQL_REQUIRE(src_offset + size <= page_size_,
+                  "MoveInPage: src_offset + size = " << src_offset + size << " is greater than page size "
+                                                     << page_size_);
+    NOSQL_REQUIRE(dest_offset + size <= page_size_,
+                  "MoveInPage: dest_offset + size = " << dest_offset + size << " is greater than page size "
+                                                      << page_size_);
+    writeToPage(dest_offset, GetSpan(src_offset, size));
+  }
+
+  virtual page_size_t writeToPage(page_size_t offset,
+                                  std::span<const std::byte> data,
+                                  bool omit_log = false) = 0;
 
   NO_DISCARD const std::byte* getPtr(page_size_t offset) const {
     NOSQL_REQUIRE(offset < GetPageSize(),
                   "getPtr: offset " << offset << " is greater than page size (" << GetPageSize() << ")");
     return data_ + offset;
   }
-  NO_DISCARD std::byte* getMutablePtr(page_size_t offset) {
-    NOSQL_REQUIRE(
-        offset < GetPageSize(),
-        "getMutablePtr: offset " << offset << " is greater than page size (" << GetPageSize() << ")");
-    return data_ + offset;
-  }
+
   NO_DISCARD char* getChars() const { return reinterpret_cast<char*>(data_); }
+
   void setPageNumber(page_number_t page_number) { page_number_ = page_number; }
 
   std::byte* data_ {};
@@ -161,9 +142,7 @@ protected:
 //! \brief A page that manages its own data buffer.
 class FreestandingPage : public Page {
 public:
-  FreestandingPage(page_number_t page_number,
-                   transaction_t transaction_number,
-                   page_size_t page_size)
+  FreestandingPage(page_number_t page_number, transaction_t transaction_number, page_size_t page_size)
       : Page(page_number, transaction_number, page_size) {
     resize(page_size);
   }
@@ -195,7 +174,6 @@ private:
 //! \brief A page that knows how to release its use count from a cache upon destruction.
 class RCPage : public Page {
 public:
-
   //! \brief Create a placeholder page that has not yet been mapped to a page in the database.
   RCPage(page_size_t page_size, uint32_t descriptor_index, class PageCache* owning_cache) noexcept;
 
@@ -216,6 +194,43 @@ private:
   PageCache* owning_cache_;
 
   uint32_t descriptor_index_;
+};
+
+class Transaction {
+public:
+  Transaction(uint64_t transaction_id)
+      : transaction_id_(transaction_id) {}
+
+  //! \brief Write a value of a particular type.
+  template<typename T>
+    requires std::is_trivially_copyable_v<T>
+  page_size_t WriteToPage(Page& page, page_size_t offset, const T& data, bool omit_log = false) {
+    return page.writeToPage(offset, data, omit_log);
+  }
+
+  //! \brief Write a value of a particular type to an offset defined by a pointer to member in a structure
+  template<typename Struct_t, typename Member_t, typename T>
+    requires std::is_trivially_copyable_v<T>
+  page_size_t WriteToPage(Page& page, Member_t Struct_t::* member, const T& data, bool omit_log = false) {
+    return page.writeToPage(offset(member), data, omit_log);
+  }
+
+  template<typename T>
+  page_size_t WriteToPage(Page& page,
+                          page_size_t offset,
+                          std::span<const T> data_range,
+                          bool omit_log = false) {
+    return page.writeToPage(offset, data_range, omit_log);
+  }
+
+  void MoveInPage(Page& page, page_size_t src_offset, page_size_t dest_offset, page_size_t size) {
+    page.moveInPage(src_offset, dest_offset, size);
+  }
+
+  uint64_t GetTransactionID() const noexcept { return transaction_id_; }
+
+private:
+  [[maybe_unused]] uint64_t transaction_id_;
 };
 
 }  // namespace neversql

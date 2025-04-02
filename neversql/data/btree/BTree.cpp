@@ -138,6 +138,8 @@ BTreeManager::BTreeManager(page_number_t root_page, PageCache& page_cache)
 std::unique_ptr<BTreeManager> BTreeManager::CreateNewBTree(PageCache& page_cache, DataTypeEnum key_type) {
   BTreeNodeMap root_node(page_cache.GetNewPage());
 
+  Transaction transaction {0};  // TODO
+
   // Set the comparison and string debug functions. These are a B-tree property, not stored per-page.
 
   // === Reserved space. =================================================================================
@@ -158,17 +160,17 @@ std::unique_ptr<BTreeManager> BTreeManager::CreateNewBTree(PageCache& page_cache
   //       the key type is a string.
   if (key_type == DataTypeEnum::String) {
     const auto flags = header.GetFlags();
-    header.SetFlags(flags | 0b100);
+    header.SetFlags(transaction, flags | 0b100);
   }
 
   LOG_SEV(Trace) << "Root page allocated to be page " << root_node.GetPageNumber() << ".";
 
   // Write zero into the reserved space.
   auto offset = root_node.GetHeader().GetReservedStart();
-  offset = root_node.GetPage()->WriteToPage<int8_t>(offset, static_cast<int8_t>(key_type));
-  offset = root_node.GetPage()->WriteToPage<uint8_t>(offset, 0);
+  offset = transaction.WriteToPage<int8_t>(*root_node.GetPage(), offset, static_cast<int8_t>(key_type));
+  offset = transaction.WriteToPage<uint8_t>(*root_node.GetPage(), offset, 0);
   if (key_type == DataTypeEnum::UInt64) {
-    root_node.GetPage()->WriteToPage<primary_key_t>(offset, 0);
+    transaction.WriteToPage<primary_key_t>(*root_node.GetPage(), offset, 0);
   }
 
   return std::make_unique<BTreeManager>(root_node.GetPageNumber(), page_cache);
@@ -284,6 +286,8 @@ void BTreeManager::initialize() {
 }
 
 primary_key_t BTreeManager::getNextPrimaryKey() const {
+  Transaction transaction {0};  // TODO
+
   // Only possible if the key type is uint64_t.
   NOSQL_ASSERT(key_type_ == DataTypeEnum::UInt64, "cannot get next primary key for non-uint64_t key type");
 
@@ -295,13 +299,15 @@ primary_key_t BTreeManager::getNextPrimaryKey() const {
   pk = root->GetPage()->Read<primary_key_t>(counter_offset);
 
   primary_key_t next_primary_key = pk + 1;
-  root->GetPage()->WriteToPage(counter_offset, next_primary_key);
+  transaction.WriteToPage(*root->GetPage(), counter_offset, next_primary_key);
 
   LOG_SEV(Trace) << "Next primary key is " << pk << ".";
   return pk;
 }
 
 page_number_t BTreeManager::getNextOverflowPage() {
+  Transaction transaction {0};  // TODO
+
   auto root = loadNodePage(root_page_);
 
   // Get a new page.
@@ -312,7 +318,7 @@ page_number_t BTreeManager::getNextOverflowPage() {
 
   auto offset = 2;
   const auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + offset);
-  root->GetPage()->WriteToPage<page_number_t>(counter_offset, current_overflow_page_number_);
+  transaction.WriteToPage<page_number_t>(*root->GetPage(), counter_offset, current_overflow_page_number_);
 
   return current_overflow_page_number_;
 }
@@ -326,6 +332,8 @@ page_number_t BTreeManager::getCurrentOverflowPage() {
 }
 
 primary_key_t BTreeManager::getNextOverflowEntryNumber() {
+  Transaction transaction {0};  // TODO
+
   auto root = loadNodePage(root_page_);
 
   ++next_overflow_entry_number_;
@@ -333,7 +341,7 @@ primary_key_t BTreeManager::getNextOverflowEntryNumber() {
   // Next overflow entry is stored right after the flags.
   auto offset = 2 + sizeof(primary_key_t);
   const auto counter_offset = static_cast<page_size_t>(root->GetHeader().GetReservedStart() + offset);
-  root->GetPage()->WriteToPage<page_number_t>(counter_offset, next_overflow_entry_number_);
+  transaction.WriteToPage<page_number_t>(*root->GetPage(), counter_offset, next_overflow_entry_number_);
 
   return next_overflow_entry_number_ - 1;
 }
@@ -379,6 +387,8 @@ std::optional<BTreeNodeMap> BTreeManager::loadNodePage(page_number_t page_number
 }
 
 bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& data, bool unique_keys) {
+  Transaction transaction {0};  // TODO
+
   auto header = node_map.GetHeader();
   auto is_overflow_page = header.IsOverflowPage();
   LOG_SEV(Debug) << "Adding element with pk = " << debugKey(data.key) << " to page "
@@ -464,16 +474,16 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
                    << (offset - entry_start_offset) << " bytes");
 
   // The cell has been added, update the page header to indicate that the cell is there.
-  header.SetFreeEnd(static_cast<page_size_t>(header.GetFreeEnd() - cell_space));
-  page->WriteToPage(header.GetFreeStart(), header.GetFreeEnd());
-  header.SetFreeBegin(header.GetFreeStart() + sizeof(page_size_t));
+  header.SetFreeEnd(transaction, static_cast<page_size_t>(header.GetFreeEnd() - cell_space));
+  transaction.WriteToPage(*page, header.GetFreeBegin(), header.GetFreeEnd());
+  header.SetFreeBegin(transaction, header.GetFreeBegin() + sizeof(page_size_t));
 
   // Make sure keys are all in ascending order. Only need to do this if the keys are not already sorted
   // (i.e. this was not a rightmost append).
   if (greatest_pk && cmp_(data.key, *greatest_pk)) {
     LOG_SEV(Debug) << "New key is not the largest key, sorting keys in node " << header.GetPageNumber()
                    << ".";
-    node_map.sortKeys();
+    node_map.sortKeys(transaction);
   }
 
   return true;
@@ -482,6 +492,8 @@ bool BTreeManager::addElementToNode(BTreeNodeMap& node_map, const StoreData& dat
 void BTreeManager::splitNode(BTreeNodeMap& node,
                              SearchResult& result,
                              std::optional<std::reference_wrapper<StoreData>> data) {
+  Transaction transaction {0};  // TODO
+
   LOG_SEV(Debug) << "Splitting node on page " << node.GetPageNumber() << ".";
   if (node.GetHeader().IsRootPage()) {
     LOG_SEV(Trace) << "  * Splitting root node.";
@@ -506,7 +518,7 @@ void BTreeManager::splitNode(BTreeNodeMap& node,
   // Create the data store specification.
 
   auto entry_creator = internal::MakeSizelessCreator<internal::SpanPayloadSerializer>(
-      internal::SpanValue(split_data.left_page));
+      transaction.GetTransactionID(), internal::SpanValue(split_data.left_page));
   StoreData store_data {.key = split_data.split_key,
                         .entry_creator = &entry_creator,
                         .serialize_key_size = serialize_key_size_,
@@ -541,6 +553,8 @@ void BTreeManager::splitNode(BTreeNodeMap& node,
 
 SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
                                         std::optional<std::reference_wrapper<StoreData>> data) {
+  Transaction transaction {0};
+
   // Balanced split: create a new page, move half of the elements to the new page.
   // Unbalanced split: move all, or almost all, elements to the new page. Most efficient for adding
   //                   consecutive keys.
@@ -572,7 +586,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
     // the split value in the parent.
     auto pointers_cell =
         std::get<PointersNodeCell>(node.getCell(pointers[static_cast<uint64_t>(num_elements_to_move - 1)]));
-    new_node.GetHeader().SetAdditionalData(pointers_cell.page_number);
+    new_node.GetHeader().SetAdditionalData(transaction, pointers_cell.page_number);
 
     return_data.SetKey(pointers_cell.key);
   }
@@ -591,12 +605,12 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
     auto cell = node.getCell(pointers[static_cast<uint64_t>(i)]);
 
     std::visit(
-        [&new_node, this]<typename Node_t>(const Node_t& cell) {
+        [&new_node, &transaction, this]<typename Node_t>(const Node_t& cell) {
           using T = std::decay_t<Node_t>;
           StoreData store_data {.key = cell.key, .serialize_key_size = serialize_key_size_};
           if constexpr (std::is_same_v<T, PointersNodeCell>) {
             auto creator = internal::MakeSizelessCreator<internal::SpanPayloadSerializer>(
-                internal::SpanValue(cell.page_number));
+                transaction.GetTransactionID(), internal::SpanValue(cell.page_number));
             store_data.entry_creator = &creator;
             store_data.serialize_data_size = false;
             addElementToNode(new_node, store_data);
@@ -605,7 +619,7 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
             // Note: We only need to copy literally the entry in the page. In particular, it does not matter
             //       if the entry is the header for an overflow page.
             //       Use the entry copier, so we copy the correct flags.
-            internal::EntryCopier creator(cell.flags, cell.SpanValue());
+            internal::EntryCopier creator(transaction.GetTransactionID(), cell.flags, cell.SpanValue());
             store_data.entry_creator = &creator;
 
             store_data.serialize_data_size = true;
@@ -630,11 +644,11 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
   std::ranges::copy(remaining_pointers, pointers_copy.begin());
   // Span for the vector
   remaining_pointers = pointers_copy;
-  node.GetPage()->WriteToPage(header.GetPointersStart(), remaining_pointers);
+  transaction.WriteToPage(*node.GetPage(), header.GetPointersStart(), remaining_pointers);
 
   // "Free" the rightmost num_elements_to_move pointers in the original node.
   // TODO: Create a linked list of blocks of newly freed space?
-  header.SetFreeBegin(header.GetFreeStart() - (num_elements_to_move * sizeof(page_size_t)));
+  header.SetFreeBegin(transaction, header.GetFreeBegin() - (num_elements_to_move * sizeof(page_size_t)));
 
   // =======================================
   // Potentially add data.
@@ -675,6 +689,8 @@ SplitPage BTreeManager::splitSingleNode(BTreeNodeMap& node,
 }
 
 void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> data) {
+  Transaction transaction {0};  // TODO
+
   LOG_SEV(Debug) << "Splitting root node.";
 
   // If the key type is UInt64, we are using auto-incrementing primary keys (this is the assumption for now,
@@ -714,13 +730,13 @@ void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> da
           if constexpr (std::is_same_v<T, PointersNodeCell>) {
             if (i == num_for_left) {
               // Add this page as the rightmost pointer.
-              node_to_add_to.GetHeader().SetAdditionalData(cell.page_number);
+              node_to_add_to.GetHeader().SetAdditionalData(transaction, cell.page_number);
               LOG_SEV(Trace) << "Setting the rightmost pointer in the right child (P"
                              << node_to_add_to.GetPageNumber() << ") to " << cell.page_number << ".";
             }
             else {
               auto creator = internal::MakeSizelessCreator<internal::SpanPayloadSerializer>(
-                  internal::SpanValue(cell.page_number));
+                  transaction.GetTransactionID(), internal::SpanValue(cell.page_number));
               store_data.entry_creator = &creator;
               store_data.serialize_data_size = false;
               NOSQL_ASSERT(addElementToNode(node_to_add_to, store_data),
@@ -731,7 +747,8 @@ void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> da
             // Note: We only need to copy literally the entry in the page. In particular, it does not matter
             //       if the entry is the header for an overflow page.
             //       Use the entry copier, so we copy the correct flags.
-            auto creator = internal::EntryCopier(cell.flags, cell.SpanValue());
+            auto creator =
+                internal::EntryCopier(transaction.GetTransactionID(), cell.flags, cell.SpanValue());
             store_data.entry_creator = &creator;
             store_data.serialize_data_size = true;
             NOSQL_ASSERT(addElementToNode(node_to_add_to, store_data),
@@ -746,7 +763,7 @@ void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> da
 
   // If the root was a pointers page, we need to set the rightmost pointer in the root to the right child.
   if (root_header.IsPointersPage()) {
-    right_child.GetHeader().SetAdditionalData(root_header.GetAdditionalData());
+    right_child.GetHeader().SetAdditionalData(transaction, root_header.GetAdditionalData());
     LOG_SEV(Trace) << "Setting the rightmost pointer in the right child (P" << right_child.GetPageNumber()
                    << ") to " << root_header.GetAdditionalData() << ".";
   }
@@ -763,26 +780,29 @@ void BTreeManager::splitRoot(std::optional<std::reference_wrapper<StoreData>> da
   }
 
   // Clear the entire root page.
-  root_header.SetFreeBegin(root_header.GetPointersStart());
-  root_header.SetFreeEnd(root_header.GetReservedStart());
+  root_header.SetFreeBegin(transaction, root_header.GetPointersStart());
+  root_header.SetFreeEnd(transaction, root_header.GetReservedStart());
 
   // Set the root page to be a pointers page.
-  root_header.SetFlags(root_header.GetFlags() | 0b1);
+  root_header.SetFlags(transaction, root_header.GetFlags() | 0b1);
 
   // Add the two child pages to the root page, which is a pointers page (so we don't serialize the data size).
-  auto entry_creator =
-      internal::MakeSizelessCreator<internal::SpanPayloadSerializer>(internal::SpanValue(left_page_number));
+  auto entry_creator = internal::MakeSizelessCreator<internal::SpanPayloadSerializer>(
+      transaction.GetTransactionID(), internal::SpanValue(left_page_number));
+
   StoreData store_data {.key = split_key,
                         .entry_creator = &entry_creator,
                         .serialize_key_size = serialize_key_size_,
                         .serialize_data_size = false};
   addElementToNode(*root, store_data);
   // The right page is the "rightmost" pointer.
-  root_header.SetAdditionalData(right_page_number);
+  root_header.SetAdditionalData(transaction, right_page_number);
   LOG_SEV(Trace) << "Set the rightmost pointer in the root node to " << right_page_number << ".";
 }
 
 void BTreeManager::vacuum(BTreeNodeMap& node) const {
+  Transaction transaction {0};
+
   // TODO: This is not actually a hard requirement, but I need to write the fallback.
   NOSQL_REQUIRE(node.GetNumPointers() < 256,
                 "vacuuming not implemented for nodes with more than 256 pointers");
@@ -820,13 +840,14 @@ void BTreeManager::vacuum(BTreeNodeMap& node) const {
                    << " (cell size " << cell_size << ").";
 
     // Copy the cell to the new location.
-    page->MoveInPage(offset, next_point, cell_size);
+    transaction.MoveInPage(*page, offset, next_point, cell_size);
 
     // Update the pointer.
-    page->WriteToPage(header.GetPointersStart() + (pointer_number * sizeof(page_size_t)), next_point);
+    transaction.WriteToPage(
+        *page, header.GetPointersStart() + (pointer_number * sizeof(page_size_t)), next_point);
   }
   // Set the updated free-end location.
-  header.SetFreeEnd(next_point);
+  header.SetFreeEnd(transaction, next_point);
 
   LOG_SEV(Debug) << "Finished vacuuming node on page " << node.GetPageNumber() << ". Node now has "
                  << node.GetDefragmentedFreeSpace() << " bytes of defragmented free space.";
@@ -918,27 +939,31 @@ page_size_t BTreeManager::writeFlags(Page& page,
                                      BTreePageHeader& header,
                                      internal::EntryCreator& entry_creator,
                                      page_size_t offset) noexcept {
+  Transaction transaction {0};  // TODO
+
   auto flags = entry_creator.GenerateFlags();
   // Set flags the the B-tree is responsible for.
   flags |= static_cast<std::byte>(internal::EntryFlags::IsActive);
   if (header.AreKeySizesSpecified()) {
     flags |= static_cast<std::byte>(internal::EntryFlags::KeySizeIsSerialized);
   }
-  return page.WriteToPage(offset, flags);
+  return transaction.WriteToPage(page, offset, flags);
 }
 
 page_size_t BTreeManager::writeKey(Page& page,
                                    BTreePageHeader& header,
                                    page_size_t offset,
                                    GeneralKey key) noexcept {
+  Transaction transaction {0};  // TODO
+
   // If the page is set up to use fixed primary_key_t length keys, just write the key.
   // Otherwise, we have to write the key size, then the key.
   if (header.AreKeySizesSpecified()) {
     // Write the size of the key, key size is stored as a uint16_t.
     auto key_size = static_cast<uint16_t>(key.size());
-    offset = page.WriteToPage(offset, key_size);
+    offset = transaction.WriteToPage(page, offset, key_size);
   }
-  return page.WriteToPage(offset, key);
+  return transaction.WriteToPage(page, offset, key);
 }
 
 }  // namespace neversql

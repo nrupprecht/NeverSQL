@@ -27,6 +27,9 @@ public:
 
   void AddCollection(const CollectionInfo& info);
 
+
+  Transaction CreateTransaction();
+
   // ========================================
   //  General key methods
   // ========================================
@@ -44,12 +47,6 @@ public:
   // ========================================
   //  Primary key methods
   // ========================================
-
-  //! \brief Add a value to the database.
-  // void AddValue(const std::string& collection_name, primary_key_t key, std::span<const std::byte> value);
-
-  //! \brief Add a value to the database using an auto incrementing key.
-  // void AddValue(const std::string& collection_name, std::span<const std::byte> value);
 
   //! \brief Add a document to the database.
   void AddValue(const std::string& collection_name, const Document& document);
@@ -95,6 +92,9 @@ private:
 
   //! \brief Cache the collections that are in the database.
   std::map<std::string, std::unique_ptr<BTreeManager>> collections_;
+
+  //! \brief Cache the next transaction ID.
+  std::size_t next_transaction_id_{};
 };
 
 }  // namespace neversql

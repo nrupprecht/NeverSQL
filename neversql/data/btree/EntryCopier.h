@@ -12,10 +12,11 @@ namespace neversql::internal {
 //!        overflow page header / entry).
 class EntryCopier : public EntryCreator {
 public:
-  EntryCopier(std::byte flags, std::span<const std::byte> payload);
+  EntryCopier(uint64_t transaction_id, std::byte flags, std::span<const std::byte> payload);
 
   //! \brief Return the stored flags
   std::byte GenerateFlags() const override { return flags_; }
+
 private:
   std::byte flags_;
 };

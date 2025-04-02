@@ -233,7 +233,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
   }
   else {
     // TODO: For now at least, assume that keys whose size are not specified are uint64_t.
-    //   This can be relaxed later.
+    //       This can be relaxed later.
     key = page_->GetSpan(entry_offset, sizeof(primary_key_t));
     entry_offset += sizeof(primary_key_t);
   }
@@ -246,9 +246,8 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getCell(page_size_t c
   // bytes.
   const auto potential_entry_size = page_->Read<page_size_t>(entry_offset);
   const auto entry_data = is_single_page
-      ? page_->ReadFromPage(entry_offset + (is_note_flag_true ? sizeof(page_size_t) : 0),
-                            potential_entry_size)
-      : page_->ReadFromPage(entry_offset, 16);
+      ? page_->GetSpan(entry_offset + (is_note_flag_true ? sizeof(page_size_t) : 0), potential_entry_size)
+      : page_->GetSpan(entry_offset, 16);
 
   return DataNodeCell {.flags = flags, .key = key, .data = entry_data};
 }
@@ -259,7 +258,7 @@ std::variant<DataNodeCell, PointersNodeCell> BTreeNodeMap::getNthCell(page_size_
   return getCell(pointers[cell_number]);
 }
 
-void BTreeNodeMap::sortKeys() {
+void BTreeNodeMap::sortKeys(Transaction& transaction) {
   auto pointers = getPointers();
 
   std::vector<page_size_t> data {pointers.begin(), pointers.end()};
@@ -267,7 +266,7 @@ void BTreeNodeMap::sortKeys() {
   std::ranges::sort(
       data, [this](auto&& ptr1, auto&& ptr2) { return cmp_(getKeyForCell(ptr1), getKeyForCell(ptr2)); });
   std::span<page_size_t> sorted_ptrs {data.data(), data.size()};
-  GetPage()->WriteToPage(getHeader().GetPointersStart(), sorted_ptrs);
+  transaction.WriteToPage(*GetPage(), getHeader().GetPointersStart(), sorted_ptrs);
 }
 
 std::string BTreeNodeMap::debugKey(GeneralKey key) const {

@@ -215,7 +215,7 @@ private:
   std::variant<DataNodeCell, PointersNodeCell> getNthCell(page_size_t cell_number) const;
 
   //! \brief Sort the keys in the node by the primary key they refer to.
-  void sortKeys();
+  void sortKeys(Transaction& transaction);
 
   //! \brief Debug function that returns a string representation of a key.
   //!

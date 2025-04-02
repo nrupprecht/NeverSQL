@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "neversql/utility/Defines.h"
+#include "neversql/data/internals/PageUtilities.h"
 
 namespace neversql {
 
@@ -21,6 +21,7 @@ inline constexpr uint8_t POINTERS_PAGE_FLAG = 0x1;
 inline constexpr uint8_t ROOT_PAGE_FLAG = 0x2;
 inline constexpr uint8_t KEY_SIZES_SERIALIZED_FLAG = 0x4;
 inline constexpr uint8_t OVERFLOW_PAGE_FLAG = 0x8;
+
 
 // clang-format off
 //! \brief The header for a B-tree page.
@@ -57,58 +58,110 @@ inline constexpr uint8_t OVERFLOW_PAGE_FLAG = 0x8;
 class BTreePageHeader {
   friend class BTreeNodeMap;
 
+  struct Header {
+    STRUCT_DATA(uint64_t, magic_number);          // 8 bytes
+    STRUCT_DATA(uint8_t, flags);                  // 1 byte
+    STRUCT_DATA(page_size_t, free_begin);         // 2 bytes
+    STRUCT_DATA(page_size_t, free_end);           // 2 bytes
+    STRUCT_DATA(page_size_t, reserved_start);     // 2 bytes
+    STRUCT_DATA(page_number_t, page_number);      // 8 bytes
+    STRUCT_DATA(page_number_t, additional_data);  // 8 bytes
+  };
+
 public:
-  NO_DISCARD uint64_t GetMagicNumber() const noexcept { return page_->Read<uint64_t>(0); }
-  NO_DISCARD uint8_t GetFlags() const noexcept { return page_->Read<uint8_t>(8); }
-  NO_DISCARD page_size_t GetFreeStart() const noexcept { return page_->Read<page_size_t>(9); }
-  NO_DISCARD page_size_t GetFreeEnd() const noexcept { return page_->Read<page_size_t>(11); }
-  NO_DISCARD page_size_t GetReservedStart() const noexcept { return page_->Read<page_size_t>(13); }
-  NO_DISCARD page_number_t GetPageNumber() const noexcept { return page_->Read<page_number_t>(15); }
-  NO_DISCARD page_number_t GetAdditionalData() const noexcept { return page_->Read<page_number_t>(23); }
+  NO_DISCARD uint64_t GetMagicNumber() const noexcept { return page_->Read<uint64_t>(&Header::magic_number); }
+
+  NO_DISCARD uint8_t GetFlags() const noexcept { return page_->Read<uint8_t>(&Header::flags); }
+
+  NO_DISCARD page_size_t GetFreeBegin() const noexcept {
+    return page_->Read<page_size_t>(&Header::free_begin);
+  }
+
+  NO_DISCARD page_size_t GetFreeEnd() const noexcept { return page_->Read<page_size_t>(&Header::free_end); }
+
+  NO_DISCARD page_size_t GetReservedStart() const noexcept {
+    return page_->Read<page_size_t>(&Header::reserved_start);
+  }
+
+  NO_DISCARD page_number_t GetPageNumber() const noexcept {
+    return page_->Read<page_number_t>(&Header::page_number);
+  }
+
+  NO_DISCARD page_number_t GetAdditionalData() const noexcept {
+    return page_->Read<page_number_t>(&Header::additional_data);
+  }
+
+  NO_DISCARD page_size_t GetPointersStart() const noexcept { return sizeof(Header); }
+
   NO_DISCARD page_size_t GetPageSize() const noexcept { return page_->GetPageSize(); }
 
-  void SetMagicNumber(uint64_t magic_number) { page_->WriteToPage(0, magic_number); }
-  void SetFlags(uint8_t flags) { page_->WriteToPage(8, flags); }
-  void SetFreeBegin(page_size_t free_begin) { page_->WriteToPage(9, free_begin); }
-  void SetFreeEnd(page_size_t free_end) { page_->WriteToPage(11, free_end); }
-  void SetReservedStart(page_size_t reserved_start) { page_->WriteToPage(13, reserved_start); }
-  void SetPageNumber(page_number_t page_number) { page_->WriteToPage(15, page_number); }
-  void SetAdditionalData(page_number_t data) { page_->WriteToPage(23, data); }
+  // Mutators
 
-  NO_DISCARD page_size_t GetPointersStart() const noexcept { return 31; }
+  void SetMagicNumber(Transaction& transaction, uint64_t magic_number) {
+    transaction.WriteToPage(*page_, &Header::magic_number, magic_number);
+  }
+
+  void SetFlags(Transaction& transaction, uint8_t flags) {
+    transaction.WriteToPage(*page_, &Header::flags, flags);
+  }
+
+  void SetFreeBegin(Transaction& transaction, page_size_t free_begin) {
+    transaction.WriteToPage(*page_, &Header::free_begin, free_begin);
+  }
+
+  void SetFreeEnd(Transaction& transaction, page_size_t free_end) {
+    transaction.WriteToPage(*page_, &Header::free_end, free_end);
+  }
+
+  void SetReservedStart(Transaction& transaction, page_size_t reserved_start) {
+    transaction.WriteToPage(*page_, &Header::reserved_start, reserved_start);
+  }
+
+  void SetPageNumber(Transaction& transaction, page_number_t page_number) {
+    transaction.WriteToPage(*page_, &Header::page_number, page_number);
+  }
+
+  void SetAdditionalData(Transaction& transaction, page_number_t data) {
+    transaction.WriteToPage(*page_, &Header::additional_data, data);
+  }
 
   // =========================================================================================
   //  Other helper functions.
   // =========================================================================================
 
   void InitializePage(page_number_t page_number, BTreePageType type, page_size_t reserved_size = 0) {
-    SetMagicNumber(ToUInt64("NOSQLBTR"));
-    SetPageNumber(page_number);
-    SetFlags(static_cast<uint8_t>(type));
+    Transaction transaction {0};  // TODO
+
+    SetMagicNumber(transaction, ToUInt64("NOSQLBTR"));
+    SetPageNumber(transaction, page_number);
+    SetFlags(transaction, static_cast<uint8_t>(type));
+    // Reserved space is at the end of the page.
     const auto reserved_start = static_cast<page_size_t>(GetPageSize() - reserved_size);
-    SetReservedStart(reserved_start);
-    SetFreeEnd(reserved_start);
-    SetFreeBegin(GetPointersStart());
+    SetReservedStart(transaction, reserved_start);
+    SetFreeEnd(transaction, reserved_start);
+    SetFreeBegin(transaction, GetPointersStart());
   }
 
   void InitializeOverflowPage(page_number_t page_number) {
-    SetMagicNumber(ToUInt64("OVERFLOW"));
-    SetPageNumber(page_number);
-    SetFlags(OVERFLOW_PAGE_FLAG);
+    Transaction transaction {0};  // TODO
+
+    SetMagicNumber(transaction, ToUInt64("OVERFLOW"));
+    SetPageNumber(transaction, page_number);
+    SetFlags(transaction, OVERFLOW_PAGE_FLAG);
 
     const auto reserved_start = GetPageSize();
-    SetReservedStart(reserved_start);
-    SetFreeEnd(reserved_start);
-    SetFreeBegin(GetPointersStart());
+    SetReservedStart(transaction, reserved_start);
+    SetFreeEnd(transaction, reserved_start);
+    SetFreeBegin(transaction, GetPointersStart());
   }
 
   //! \brief Get the number of pointers on the page.
   NO_DISCARD page_size_t GetNumPointers() const noexcept {
-    return (GetFreeStart() - GetPointersStart()) / sizeof(page_size_t);
+    return (GetFreeBegin() - GetPointersStart()) / sizeof(page_size_t);
   }
 
   //! \brief Get the amount of de-fragmented free space on the page.
-  NO_DISCARD page_size_t GetDefragmentedFreeSpace() const { return GetFreeEnd() - GetFreeStart(); }
+  NO_DISCARD page_size_t GetDefragmentedFreeSpace() const { return GetFreeEnd() - GetFreeBegin(); }
 
   //! \brief Check whether this page is a pointers page, that is, whether it only stores pointers to other
   //!        pages instead of storing data.

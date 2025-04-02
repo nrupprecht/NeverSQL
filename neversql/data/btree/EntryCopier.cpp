@@ -8,8 +8,9 @@
 
 namespace neversql::internal {
 
-EntryCopier::EntryCopier(std::byte flags, std::span<const std::byte> payload)
-    : EntryCreator(std::make_unique<SpanPayloadSerializer>(payload), GetIsEntrySizeSerialized(flags))
+EntryCopier::EntryCopier(uint64_t transaction_id, std::byte flags, std::span<const std::byte> payload)
+    : EntryCreator(
+          transaction_id, std::make_unique<SpanPayloadSerializer>(payload), GetIsEntrySizeSerialized(flags))
     , flags_(flags & std::byte {0xFF}) {}
 
 }  // namespace neversql::internal

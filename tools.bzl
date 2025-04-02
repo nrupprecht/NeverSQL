@@ -1,5 +1,5 @@
 def default_opts():
-    return ["-std=c++20", "-Wpedantic", "-Wall", "-Wextra"]
+    return ["-std=c++23", "-Wpedantic", "-Wall", "-Wextra"]
 
 def neversql_binary(src):
     name = src.split(".")[0]

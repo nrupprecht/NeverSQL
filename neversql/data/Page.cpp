@@ -36,7 +36,7 @@ page_size_t RCPage::writeToPage(page_size_t offset, std::span<const std::byte> d
   // Since we write to the page, the page is now dirty.
   owning_cache_->SetDirty(descriptor_index_);
   if (!omit_log) {
-    auto lsn = owning_cache_->GetWAL().Update(transaction_number_,
+    [[maybe_unused]] auto lsn = owning_cache_->GetWAL().Update(transaction_number_,
                                               page_number_,
                                               offset,
                                               GetSpan(offset, static_cast<page_size_t>(data.size())),
